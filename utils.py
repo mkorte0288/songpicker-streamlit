@@ -15,12 +15,22 @@ def backup_dateien():
     return backup_path
 
 def color_for_reifegrad(grad):
-    if grad < 4:
-        return APP_CONFIG["colors"]["low"]
-    elif grad >= 9:
-        return APP_CONFIG["colors"]["high"]
+    """
+    Gibt eine Farbe im Verlauf Rot (0) -> Gelb (5) -> Grün (10) für den Reifegrad zurück.
+    """
+    # Clamp grad
+    grad = max(0, min(10, grad))
+    if grad <= 5:
+        # Rot (252, 80, 80) -> Gelb (252, 223, 31)
+        r = 252
+        g = int(80 + (223-80) * (grad/5))
+        b = int(80 + (31-80) * (grad/5))
     else:
-        return APP_CONFIG["colors"]["medium"]
+        # Gelb (252, 223, 31) -> Grün (60, 179, 113)
+        r = int(252 + (60-252) * ((grad-5)/5))
+        g = int(223 + (179-223) * ((grad-5)/5))
+        b = int(31 + (113-31) * ((grad-5)/5))
+    return f'rgb({r},{g},{b})'
 
 def kommentar_fuer_reifegrad(grad):
     if grad < 4:
@@ -28,4 +38,19 @@ def kommentar_fuer_reifegrad(grad):
     elif grad >= 9:
         return "Top fit!"
     else:
-        return "" 
+        return ""
+
+def color_for_reifegrad_mpl(grad):
+    """
+    Gibt eine Farbe als (r,g,b)-Tupel (Werte 0-1) für Matplotlib zurück.
+    """
+    grad = max(0, min(10, grad))
+    if grad <= 5:
+        r = 252
+        g = int(80 + (223-80) * (grad/5))
+        b = int(80 + (31-80) * (grad/5))
+    else:
+        r = int(252 + (60-252) * ((grad-5)/5))
+        g = int(223 + (179-223) * ((grad-5)/5))
+        b = int(31 + (113-31) * ((grad-5)/5))
+    return (r/255, g/255, b/255) 
