@@ -180,6 +180,17 @@ with tabs[0]:
                         unsafe_allow_html=True
                     )
                 
+                # Info-Block für den Nutzer
+                st.info(
+                    """
+                    **Was passiert als Nächstes?**
+                    - Prüfe die ausgewählten Songs.
+                    - Du kannst weitere Songs hinzufügen oder die Auswahl anpassen.
+                    - Klicke auf **„Auswahl speichern“**, um die Songs für die nächste Probe zu übernehmen.
+                    - Nach dem Speichern werden die Songs als gespielt markiert und in die History übernommen.
+                    """
+                )
+                
                 # Manuelle Song-Hinzufügung
                 st.divider()
                 st.subheader("➕ Weitere Songs hinzufügen")
