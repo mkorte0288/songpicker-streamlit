@@ -88,10 +88,6 @@ with tabs[0]:
     with col1:
         anzahl_songs = st.slider("Wie viele Songs sollen ausgewählt werden?", 3, 10, 5)
         spieldatum = st.date_input("📅 Datum der Probe", value=datetime.today())
-    with col2:
-        if st.button("🔄 Backup erstellen"):
-            backup_path = backup_dateien()
-            st.success(f"Backup erstellt: {os.path.basename(backup_path)}")
     
     with st.expander("🎯 Erweiterte Einstellungen", expanded=False):
         must_play_weight = st.slider("Gewichtung für Must-Play Songs", 1.0, 5.0, 2.0, 0.5,
@@ -377,6 +373,10 @@ with tabs[3]:
 # --- TAB 5: Songliste bearbeiten ---
 with tabs[4]:
     st.header("✏️ Songliste bearbeiten")
+    # Backup-Button jetzt hier:
+    if st.button("🔄 Backup erstellen"):
+        backup_path = backup_dateien()
+        st.success(f"Backup erstellt: {os.path.basename(backup_path)}")
     songs_df = get_cached_songliste()
 
     # Stelle sicher, dass Kommentar als String vorliegt
