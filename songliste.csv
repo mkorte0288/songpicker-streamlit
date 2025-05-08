@@ -1,26 +1,26 @@
-Songtitel;Zuletzt_gespielt;Anzahl_gespielt;Reifegrad;Kommentar
-These Days;08/05/2025;16;3;
-Times Like These;08/05/2025;2;5;
-Arlandria;08/05/2025;3;5;
-Bridge Burning;08/05/2025;4;5;
-Monkey Wrench;08/05/2025;3;5;
-The Pretender;08/05/2025;3;5;
-DOA;08/05/2025;2;5;
-Saint Cecilia;08/05/2025;1;5;
-No son of mine;08/05/2025;2;5;
-Something from nothing;08/05/2025;2;5;
-Breakout;08/05/2025;1;5;
-Run;05/08/2025;17;5;
-Let It Die;05/08/2025;3;5;
-Walk;05/08/2025;3;5;
-All My Life;05/08/2025;16;5;
-Cold Day In The Sun;05/10/2025;3;5;
-Long Road To Ruin;05/12/2025;18;5;
-Best Of You;05/12/2025;15;5;
-Nothing at all;05/12/2025;11;5;
-Hey Johnny Park;05/12/2025;16;5;
-Learn To Fly;08/05/2025;14;6;
-Everlong;08/05/2025;4;6;
-Outside;08/05/2025;13;7;
-My Hero;08/05/2025;1;8;
-Dear Rosemary;08/05/2025;17;10;
+Songtitel;Zuletzt_gespielt;Anzahl_gespielt;Reifegrad;Kommentar;Tags;Must_Play
+These Days;05/08/2025;16;3;;;FALSE
+Times Like These;05/08/2025;2;5;;;FALSE
+Arlandria;05/08/2025;3;5;;;FALSE
+Bridge Burning;05/08/2025;4;5;;;FALSE
+Monkey Wrench;05/08/2025;3;5;;;FALSE
+The Pretender;05/08/2025;3;5;;;FALSE
+DOA;05/08/2025;2;5;;;FALSE
+Saint Cecilia;08/05/2025;2;5;;;FALSE
+No son of mine;05/08/2025;2;5;;;FALSE
+Something from nothing;05/08/2025;2;5;;;FALSE
+Breakout;05/08/2025;1;5;;;FALSE
+Run;08/05/2025;18;5;;;FALSE
+Let It Die;08/05/2025;4;5;;;FALSE
+Walk;08/05/2025;4;5;;;FALSE
+All My Life;08/05/2025;17;5;;;FALSE
+Cold Day In The Sun;10/05/2025;3;5;;;FALSE
+Long Road To Ruin;12/05/2025;18;5;;;FALSE
+Best Of You;12/05/2025;15;5;;;FALSE
+Nothing at all;12/05/2025;11;5;;;FALSE
+Hey Johnny Park;12/05/2025;16;5;;;FALSE
+Learn To Fly;05/08/2025;14;6;;;FALSE
+Everlong;05/08/2025;4;6;;;FALSE
+Outside;05/08/2025;13;7;;;FALSE
+My Hero;05/08/2025;1;8;;;FALSE
+Dear Rosemary;05/08/2025;17;10;;;FALSE
