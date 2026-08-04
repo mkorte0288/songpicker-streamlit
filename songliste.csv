@@ -1,26 +1,37 @@
-Songtitel;Zuletzt_gespielt;Anzahl_gespielt;Reifegrad;Kommentar;Tags;Must_Play
-These Days;05/08/2025;16;3;;;FALSE
-Times Like These;05/08/2025;2;5;;;FALSE
-Arlandria;05/08/2025;3;5;;;FALSE
-Bridge Burning;05/08/2025;4;5;;;FALSE
-Monkey Wrench;05/08/2025;3;5;;;FALSE
-The Pretender;05/08/2025;3;5;;;FALSE
-DOA;05/08/2025;2;5;;;FALSE
-Saint Cecilia;08/05/2025;2;5;;;FALSE
-No son of mine;05/08/2025;2;5;;;FALSE
-Something from nothing;05/08/2025;2;5;;;FALSE
-Breakout;05/08/2025;1;5;;;FALSE
-Run;08/05/2025;18;5;;;FALSE
-Let It Die;08/05/2025;4;5;;;FALSE
-Walk;08/05/2025;4;5;;;FALSE
-All My Life;08/05/2025;17;5;;;FALSE
-Cold Day In The Sun;10/05/2025;3;5;;;FALSE
-Long Road To Ruin;12/05/2025;18;5;;;FALSE
-Best Of You;12/05/2025;15;5;;;FALSE
-Nothing at all;12/05/2025;11;5;;;FALSE
-Hey Johnny Park;12/05/2025;16;5;;;FALSE
-Learn To Fly;05/08/2025;14;6;;;FALSE
-Everlong;05/08/2025;4;6;;;FALSE
-Outside;05/08/2025;13;7;;;FALSE
-My Hero;05/08/2025;1;8;;;FALSE
-Dear Rosemary;05/08/2025;17;10;;;FALSE
+Songtitel;Interpret;Status;Spielzeit;Reifegrad;Anzahl_gespielt;Kommentar;Tags;Must_Play;Favorit;Notiz
+All My Life;Foo Fighters;im Set;4:43;;17;;;False;False;
+Arlandria;Foo Fighters;im Set;4:30;;3;;;False;False;
+Back & Forth;Foo Fighters;zu klaeren;;;0;;;False;False;
+Best Of You;Foo Fighters;im Set;4:13;;15;;;False;False;
+Big Me;Foo Fighters;nicht im Repertoire;;;0;;;False;False;
+Breakout;Foo Fighters;im Set;3:40;;1;;;False;False;
+Bridge Burning;Foo Fighters;im Set;4:48;;4;;;False;False;
+Cold Day in The Sun;Foo Fighters;im Set;3:56;;0;;;False;False;
+DOA;Foo Fighters;im Set;4:26;;2;;;False;False;
+Dear Rosemary;Foo Fighters;im Set;4:31;10;17;;;False;False;
+Everlong;Foo Fighters;im Set;4:49;6;4;;;False;False;
+Generator;Foo Fighters;zu klaeren;;;0;;;False;False;
+Heroes;Motörhead;zu klaeren;;;0;;;False;False;
+Hey Johnny Park;Foo Fighters;im Set;4:09;;16;;;False;False;
+I Should Have Known;Foo Fighters;zu klaeren;;;0;;;False;False;
+In The Clear;Foo Fighters;zu klaeren;;;0;;;False;False;
+Learn To Fly;Foo Fighters;im Set;3:55;6;14;;;False;False;
+Let it die;Foo Fighters;im Set;4:04;;0;;;False;False;
+Long Road To Ruin;Foo Fighters;im Set;4:29;;18;;;False;False;
+Monkey Wrench;Foo Fighters;im Set;4:31;;3;;;False;False;
+My Hero;Foo Fighters;im Set;4:02;8;1;;;False;False;
+No son of mine;Foo Fighters;im Set;3:25;;2;;;False;False;
+Nothing at all;Foo Fighters;im Set;3:29;;11;;;False;False;
+Outside;Foo Fighters;im Set;5:14;7;13;;;False;False;
+Rope;Foo Fighters;im Set;;;0;;;False;False;
+Run;Foo Fighters;im Set;5:23;;18;;;False;False;
+Saint Cecilia;Foo Fighters;im Set;3:40;;2;;;False;False;
+Smells Like Teen Spirit;Nirvana;nicht im Repertoire;;;0;;;False;False;
+Something from nothing;Foo Fighters;im Set;7:00;;2;;;False;False;
+The Feast And The Famine;Foo Fighters;zu klaeren;;;0;;;False;False;
+The Pretender;Foo Fighters;im Set;4:26;;3;;;False;False;
+The Sky Is A Neighborhood;Foo Fighters;im Set;;;0;;;False;False;
+These Days;Foo Fighters;im Set;;3;16;;;False;False;
+Times Like These;Foo Fighters;im Set;4:26;;2;;;False;False;
+Under Pressure;David Bowie and Queen;zu klaeren;;;0;;;False;False;
+Walk;Foo Fighters;im Set;4:31;;4;;;False;False;

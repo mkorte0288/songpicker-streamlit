@@ -1,622 +1,436 @@
-import streamlit as st
-import pandas as pd
-import matplotlib.pyplot as plt
-from datetime import datetime, timedelta
-import random
+"""Songpicker für Foo Fightclub.
+
+Nur-Lesen für die Band, Bearbeitung lokal durch eine Person.
+Bearbeitungsmodus: SONGPICKER_EDIT=1 streamlit run songpicker_streamlit.py
+"""
+
 import os
-import io
-import zipfile
-import base64
-import json
-from streamlit_echarts import st_echarts
-from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode
+import random
+from datetime import datetime
 
-from config import APP_CONFIG
-from utils import color_for_reifegrad, kommentar_fuer_reifegrad, color_for_reifegrad_mpl
+import matplotlib.pyplot as plt
+import pandas as pd
+import streamlit as st
+
+from config import APP_CONFIG, EDIT_MODE
 from data_manager import DataManager
-
-# ======= EINRICHTUNG DER STREAMLIT-SEITE =======
-st.set_page_config(
-    page_title="Songpicker for Foo Fightclub", 
-    layout="wide", 
-    initial_sidebar_state="expanded"
+from utils import (
+    backup_dateien,
+    color_for_reifegrad,
+    color_for_reifegrad_mpl,
+    kommentar_fuer_reifegrad,
+    sekunden_als_text,
+    spielzeit_in_sekunden,
 )
 
-# ======= RESPONSIVE DESIGN =======
-responsive_css = '''
-<style>
-/* Grundlegende Schriftgrößen und Abstände */
-html, body, .stApp {
-    font-size: 1.05rem;
-}
 
-/* Header Layout */
-.header-container {
-    display: flex;
-    align-items: center;
-    gap: 20px;
-    margin-bottom: 1rem;
-}
+def grad_text(w):
+    return "–" if pd.isna(w) else f"{int(w)} / 10"
 
-.logo-image {
-    height: 120px;
-    width: auto;
-    object-fit: contain;
-}
 
-.banner-image {
-    height: 120px;
-    width: auto;
-    object-fit: contain;
-}
-
-/* Buttons und Inputs größer auf kleinen Bildschirmen */
-@media (max-width: 700px) {
-    .stButton > button, .stTextInput > div > input, .stSelectbox > div, .stSlider > div {
-        font-size: 1.1rem !important;
-        min-height: 48px !important;
-    }
-    .stTabs [data-baseweb="tab-list"] {
-        flex-direction: column !important;
-    }
-    .stTabs [data-baseweb="tab"] {
-        width: 100% !important;
-        margin-bottom: 4px;
-    }
-    .stColumn {
-        flex-basis: 100% !important;
-        max-width: 100% !important;
-        min-width: 100% !important;
-    }
-    .stDataFrameContainer, .stDataFrame, .stDataEditorContainer {
-        font-size: 1rem !important;
-    }
-}
-
-/* Tabelle und DataEditor auf kleinen Bildschirmen */
-@media (max-width: 500px) {
-    .stDataFrameContainer, .stDataFrame, .stDataEditorContainer {
-        font-size: 0.95rem !important;
-    }
-}
-</style>
-'''
-st.markdown(responsive_css, unsafe_allow_html=True)
-
-# Cache für häufig verwendete Daten
-@st.cache_data(ttl=300)  # Cache für 5 Minuten
-def get_cached_songliste():
-    return DataManager.lade_songliste()
-
-@st.cache_data(ttl=300)
-def get_cached_history():
-    return DataManager.lade_history()
-
-NAECHSTE_PROBE_FILE = "naechste_probe.csv"
-
-# ======= UI-START =======
-if os.path.exists(APP_CONFIG["files"]["logo"]):
-    st.image(APP_CONFIG["files"]["logo"], width=120)
-
-st.title("Songpicker for Foo Fightclub")
-
-# Tabs mit verbessertem Layout
-probe_tabs = ["Nächste Probe"] + ["🎲 Auswahl", "📊 Analyse", "📜 History", "🎯 Nachbereitung", "✏️ Songliste bearbeiten"]
-tabs = st.tabs(probe_tabs)
-if 'tab_index' in st.session_state:
-    st.experimental_set_query_params(tab=st.session_state['tab_index'])
-
-# --- TAB 0: Nächste Probe ---
-with tabs[0]:
-    st.header("📝 Nächste Probe: Song-Übersicht")
-    demo_user = "Demo-User"
-    if os.path.exists(NAECHSTE_PROBE_FILE):
-        with open(NAECHSTE_PROBE_FILE, "r", encoding="utf-8") as f:
-            selected_songs = [line.strip() for line in f if line.strip()]
-    else:
-        selected_songs = []
-    if not selected_songs:
-        st.info("Es wurde noch keine Songauswahl für die nächste Probe gespeichert.")
-    else:
-        st.write(f"**Geplante Songs für die nächste Probe:**")
-        if 'commitments' not in st.session_state:
-            st.session_state['commitments'] = {}
-        for song in selected_songs:
-            key = f"commit_{song}"
-            committed = st.session_state['commitments'].get(song, False)
-            col1, col2 = st.columns([8, 1])
-            with col1:
-                st.write(f"- {song}")
-            with col2:
-                if st.button("👍" if not committed else "✅", key=key):
-                    st.session_state['commitments'][song] = not committed
-                    st.rerun()
-                if committed:
-                    st.caption(f"{demo_user} committed")
-
-# --- TAB 1: Auswahl ---
-with tabs[1]:
-    # Band-Health-Meter (Gauge)
-    st.markdown('<h3 style="text-align:center; margin-bottom: 0.5em;">Band-Health</h3>', unsafe_allow_html=True)
-    songs_df = get_cached_songliste()
-    avg_reifegrad = songs_df['Reifegrad'].mean() if not songs_df.empty else 0
-    option = {
-        "series": [
-            {
-                "type": "gauge",
-                "startAngle": 210,
-                "endAngle": -30,
-                "min": 0,
-                "max": 10,
-                "progress": {"show": True, "width": 18},
-                "axisLine": {
-                    "lineStyle": {
-                        "width": 18,
-                        "color": [
-                            [0.4, "#fc5454"],   # Rot
-                            [0.8, "#fcdf1f"],   # Gelb
-                            [1,   "#3cb371"]    # Grün
-                        ]
-                    }
-                },
-                "pointer": {"icon": "rect", "width": 8, "length": "70%", "offsetCenter": [0, "8%"]},
-                "axisTick": {"show": False},
-                "splitLine": {"show": False},
-                "axisLabel": {"distance": 25, "fontSize": 14, "color": "#fafafa"},
-                "detail": {
-                    "valueAnimation": True,
-                    "formatter": "{value} / 10",
-                    "fontSize": 24,
-                    "color": "#fafafa",
-                    "backgroundColor": "#222a",
-                    "borderRadius": 8,
-                    "padding": [6, 12],
-                    "offsetCenter": [0, '60%']
-                },
-                "data": [{"value": round(avg_reifegrad, 1)}]
-            }
-        ],
-        "backgroundColor": "#0e1117"
-    }
-    st_echarts(option, height="260px")
-    st.info("Das Band-Health-Meter zeigt den aktuellen durchschnittlichen Reifegrad aller Songs.")
-
-    st.info("""
-    **Song-Auswahl:**
-    - Generiere eine Playlist für die nächste Probe nach verschiedenen Kriterien.
-    - Passe Filter und Einstellungen an, um die Auswahl zu beeinflussen.
-    - Speichere die Auswahl, um sie für die Probe zu übernehmen.
-    """)
-    st.header("🎲 Song-Auswahl für die nächste Probe")
-
-    # Step 1: Filter
-    with st.expander("1️⃣ Filter (Tags)", expanded=True):
-        songs_df = get_cached_songliste()
-        alle_tags = set()
-        for tags in songs_df['Tags'].dropna():
-            for tag in [t.strip() for t in str(tags).split(',') if t.strip()]:
-                alle_tags.add(tag)
-        alle_tags = sorted(alle_tags)
-        selected_tags = st.multiselect("Nach Tags filtern", alle_tags, key="auswahl_tagfilter")
-
-    # Step 2: Einstellungen
-    with st.expander("2️⃣ Einstellungen", expanded=True):
-        col1, col2 = st.columns([2, 1])
-        with col1:
-            anzahl_songs = st.slider("Wie viele Songs sollen ausgewählt werden?", 3, 10, 5)
-            spieldatum = st.date_input("📅 Datum der Probe", value=datetime.today())
-    # Erweiterte Einstellungen als separater Expander, außerhalb und darunter
-    with st.expander("Erweiterte Einstellungen", expanded=False):
-        must_play_weight = st.slider("Gewichtung für Must-Play Songs", 1.0, 5.0, 2.0, 0.5,
-                                    help="Bestimmt, wie stark Must-Play Songs bevorzugt werden")
-        reifegrad_weight = st.slider("Gewichtung für Reifegrad", 0.5, 2.0, 1.0, 0.1,
-                                    help="Bestimmt, wie stark der Reifegrad die Auswahl beeinflusst")
-
-    # Step 3: Songauswahl & Aktionen
-    with st.expander("3️⃣ Songauswahl & Aktionen", expanded=True):
-        if songs_df.empty:
-            st.error("Die Datei songliste.csv wurde nicht gefunden oder ist leer.")
-        else:
-            # Gewichtete Auswahl mit verbesserten Gewichtungen (wie vorher)
-            max_days = (datetime.today() - songs_df['Zuletzt_gespielt']).dt.days.max()
-            if max_days == 0: max_days = 1
-            weights = (
-                (11 - songs_df['Reifegrad']) * must_play_weight +
-                (songs_df['Zuletzt_gespielt'].apply(lambda d: (datetime.today() - d).days) / max_days * 5) +
-                (songs_df['Must_Play'] * reifegrad_weight)
-            )
-            weights = weights.clip(lower=0.1)
-            weights = weights / weights.sum()
-            selected_songs_container = st.container()
-            if st.button("🎲 Songs auswählen", use_container_width=True, help="Erstellt eine neue zufällige Songauswahl nach den aktuellen Kriterien."):
-                n_songs = min(anzahl_songs, len(songs_df))
-                auswahl = songs_df.sample(n=n_songs, weights=weights, random_state=random.randint(0, 10000))
-                st.session_state.selected_songs = auswahl['Songtitel'].tolist()
-                st.rerun()
-            if 'selected_songs' not in st.session_state:
-                st.session_state.selected_songs = []
-            with selected_songs_container:
-                if st.session_state.selected_songs:
-                    st.subheader("🎵 Ausgewählte Songs")
-                    st.write(f"Anzahl ausgewählter Songs: {len(st.session_state.selected_songs)}")
-                    for song in st.session_state.selected_songs:
-                        song_data = songs_df[songs_df['Songtitel'] == song].iloc[0]
-                        farbe = color_for_reifegrad(song_data['Reifegrad'])
-                        status = kommentar_fuer_reifegrad(song_data['Reifegrad'])
-                        must_play_badge = "⭐ " if song_data['Must_Play'] else ""
-                        balken_breite = song_data['Reifegrad'] * 10  # Prozent
-                        st.markdown(
-                            f"""
-                            <div style='padding: 10px; margin: 5px 0; border-radius: 5px; background-color: {farbe}20;'>
-                                <span style='font-weight:bold'>{must_play_badge}{song}</span><br>
-                                <div style='margin: 6px 0 2px 0; width: 100%; max-width: 300px; height: 16px; background: #2223; border-radius: 8px; position: relative;'>
-                                    <div style='height: 100%; width: {balken_breite}%; background: {farbe}; border-radius: 8px;'></div>
-                                    <span style='position: absolute; left: {balken_breite}%; top: 0; transform: translateX(-50%); font-size: 0.9em; color: #fff; font-weight: bold;'>{song_data['Reifegrad']}/10</span>
-                                </div>
-                                Reifegrad: {song_data['Reifegrad']} {status if status else ''}
-                            </div>
-                            """,
-                            unsafe_allow_html=True
-                        )
-                    st.divider()
-                    st.subheader("➕ Weitere Songs hinzufügen")
-                    verfuegbare_songs = sorted(set(songs_df['Songtitel']) - set(st.session_state.selected_songs))
-                    if verfuegbare_songs:
-                        col1, col2 = st.columns([3, 1])
-                        with col1:
-                            neuer_song = st.selectbox("Song auswählen", verfuegbare_songs, key="add_song_select")
-                        with col2:
-                            if st.button("➕ Hinzufügen", use_container_width=True, help="Fügt den ausgewählten Song zur aktuellen Auswahl hinzu.", key="add_song_button"):
-                                st.session_state.selected_songs.append(neuer_song)
-                                st.rerun()
-                        st.caption("Fügt den ausgewählten Song zur aktuellen Auswahl hinzu.")
-                    else:
-                        st.info("Alle Songs sind bereits ausgewählt.")
-                    st.divider()
-                    # Auswahl speichern Button
-                    if st.button("💾 Auswahl speichern", use_container_width=True, help="Speichert die aktuelle Songauswahl für die nächste Probe."):
-                        with open(NAECHSTE_PROBE_FILE, "w", encoding="utf-8") as f:
-                            for song in st.session_state.selected_songs:
-                                f.write(song + "\n")
-                        st.success("Songauswahl für die nächste Probe gespeichert!")
-                        st.rerun()
-
-# --- TAB 2: Analyse ---
-with tabs[2]:
-    st.info("""
-    **Analyse:**
-    - Sieh dir Statistiken zu gespielten Songs und Reifegraden an.
-    - Exportiere History und Songliste als CSV.
-    """)
-    st.header("📊 Analyse")
-    history_df = get_cached_history()
-    songs_df = get_cached_songliste()
-    
-    if history_df.empty or songs_df.empty:
-        st.warning("Nicht genügend Daten für Analyse.")
-    else:
-        # Verbesserte Analyse mit mehr Visualisierungen
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.subheader("Meistgespielte Songs (Top 10)")
-            top = history_df['Songtitel'].value_counts().head(10)
-            reifegrad_map = songs_df.set_index('Songtitel')['Reifegrad'].to_dict()
-            farben = [color_for_reifegrad_mpl(reifegrad_map.get(song, 5)) for song in top.index]
-            plt.style.use('dark_background')
-            fig, ax = plt.subplots(figsize=(10, 6))
-            fig.patch.set_facecolor('#0e1117')
-            ax.set_facecolor('#0e1117')
-            ax.tick_params(colors='#fafafa')
-            ax.xaxis.label.set_color('#fafafa')
-            ax.yaxis.label.set_color('#fafafa')
-            ax.title.set_color('#fafafa')
-            ax.barh(y=top.index, width=top.values, color=farben)
-            ax.set_xlabel("Anzahl gespielt")
-            ax.set_ylabel("Songtitel")
-            plt.tight_layout()
-            st.pyplot(fig)
-        
-        with col2:
-            st.subheader("Reifegrad-Verteilung")
-            plt.style.use('dark_background')
-            fig, ax = plt.subplots(figsize=(10, 6))
-            fig.patch.set_facecolor('#0e1117')
-            ax.set_facecolor('#0e1117')
-            ax.tick_params(colors='#fafafa')
-            ax.xaxis.label.set_color('#fafafa')
-            ax.yaxis.label.set_color('#fafafa')
-            ax.title.set_color('#fafafa')
-            songs_df['Reifegrad'].hist(bins=11, ax=ax, color='skyblue')
-            ax.set_xlabel("Reifegrad")
-            ax.set_ylabel("Anzahl Songs")
-            plt.tight_layout()
-            st.pyplot(fig)
-        
-        # Neue Metriken
-        anzahl_proben = history_df['Gespielt_am'].dt.date.nunique()
-        avg_songs_per_probe = history_df.shape[0] / anzahl_proben if anzahl_proben > 0 else 0
-        meistgespielter_song = history_df['Songtitel'].value_counts().idxmax() if not history_df.empty else "-"
-        # Längste Song-Pause
-        last_played = songs_df.set_index('Songtitel')['Zuletzt_gespielt']
-        heute = pd.to_datetime(datetime.today())
-        song_pauses = (heute - last_played).dt.days
-        song_with_longest_pause = song_pauses.idxmax() if not song_pauses.empty else "-"
-        longest_pause_days = song_pauses.max() if not song_pauses.empty else 0
-        avg_reifegrad = songs_df['Reifegrad'].mean()
-        low_reifegrad_count = (songs_df['Reifegrad'] < 4).sum()
-        never_played_count = songs_df['Anzahl_gespielt'].eq(0).sum()
-
-        # KPIs wieder als klassische st.metric()-Werte anzeigen
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            st.metric("Anzahl Proben", anzahl_proben)
-            st.metric("Ø Songs/Probe", f"{avg_songs_per_probe:.1f}")
-            st.metric("Songs mit Reifegrad < 4", low_reifegrad_count)
-        with col2:
-            st.metric("Meistgespielter Song", meistgespielter_song)
-            st.metric("Song mit längster Pause", f"{song_with_longest_pause} ({longest_pause_days} Tage)")
-            st.metric("Songs nie gespielt", never_played_count)
-        with col3:
-            st.metric("Ø Reifegrad", f"{avg_reifegrad:.1f}")
-            unique_songs = len(songs_df)
-            st.metric("Anzahl Songs in Liste", unique_songs)
-
-        # Export-Optionen
-        st.subheader("📤 Export")
-        col1, col2 = st.columns(2)
-        with col1:
-            csv = history_df.to_csv(index=False, sep=';').encode('utf-8-sig')
-            st.download_button("History als CSV herunterladen", data=csv, 
-                             file_name="spielhistorie_export.csv", mime="text/csv")
-        with col2:
-            csv = songs_df.to_csv(index=False, sep=';').encode('utf-8-sig')
-            st.download_button("Songliste als CSV herunterladen", data=csv,
-                             file_name="songliste_export.csv", mime="text/csv")
-
-# --- TAB 3: History ---
-with tabs[3]:
-    st.info("""
-    **History:**
-    - Durchsuche und filtere die Spielhistorie nach Datum.
-    - Lade vergangene Proben als Tabelle herunter.
-    """)
-    st.header("📜 History")
-    history_df = get_cached_history()
-    
-    if history_df.empty:
-        st.info("Noch keine History-Daten vorhanden.")
-    else:
-        # Verbesserte Filterung
-        col1, col2 = st.columns(2)
-        with col1:
-            jahr = st.selectbox("Filter nach Jahr", 
-                              options=["Alle"] + sorted(history_df['Gespielt_am'].dt.year.dropna().unique().astype(str)))
-        with col2:
-            monat = st.selectbox("Filter nach Monat", 
-                               options=["Alle"] + [str(m) for m in range(1, 13)])
-        
-        filtered_df = history_df.copy()
-        if jahr != "Alle":
-            filtered_df = filtered_df[filtered_df['Gespielt_am'].dt.year == int(jahr)]
-        if monat != "Alle":
-            filtered_df = filtered_df[filtered_df['Gespielt_am'].dt.month == int(monat)]
-        
-        # Verbesserte Darstellung
-        st.dataframe(
-            filtered_df.sort_values(by="Gespielt_am", ascending=False),
-            use_container_width=True,
-            column_config={
-                "Gespielt_am": st.column_config.DatetimeColumn(
-                    "Datum",
-                    format="DD.MM.YYYY"
-                )
-            }
-        )
-
-# --- TAB 4: Nachbereitung ---
-with tabs[4]:
-    st.info("""
-    **Nachbereitung:**
-    - Passe Reifegrade und Kommentare für die letzte Probe an.
-    - Entferne oder ergänze Songs für die Probe.
-    """)
-    st.header("🎯 Nachbereitung der letzten Probe")
-    history_df = get_cached_history()
-    songs_df = get_cached_songliste()
-    
-    if history_df.empty or songs_df.empty:
-        st.info("Noch keine Spieldaten vorhanden.")
-    else:
-        # Verbesserte Datumsauswahl
-        datum_optionen = sorted(history_df['Gespielt_am'].dropna().dt.date.unique(), reverse=True)
-        auswahl_datum = st.selectbox("📅 Probedatum auswählen", datum_optionen, key="nachbereitung_probedatum_select")
-        
-        # --- Song entfernen ---
-        if 'songs_to_remove' not in st.session_state:
-            st.session_state.songs_to_remove = []
-        
-        # --- Song hinzufügen ---
-        weitere_songs = sorted(set(songs_df['Songtitel']) - set(history_df[history_df['Gespielt_am'].dt.date == auswahl_datum]['Songtitel']))
-        st.divider()
-        st.subheader("➕ Weiteren Song dieser Probe hinzufügen")
-        if weitere_songs:
-            col1, col2 = st.columns([3, 1])
-            with col1:
-                neuer_song = st.selectbox("Song aus Songliste auswählen", weitere_songs, key="neuer_probe_song")
-            with col2:
-                if st.button("➕ Song hinzufügen", use_container_width=True):
-                    neue_zeile = pd.DataFrame({'Songtitel': [neuer_song], 'Gespielt_am': [pd.to_datetime(auswahl_datum)]})
-                    neue_zeile.to_csv(APP_CONFIG["files"]["history"], sep=';', mode='a', header=False, index=False)
-                    st.success(f"{neuer_song} wurde zur Probe am {auswahl_datum} hinzugefügt.")
-                    st.rerun()
-        else:
-            st.info("Alle Songs dieser Probe sind bereits gelistet.")
-        
-        # --- History und gespielt nach jedem Hinzufügen/Entfernen neu laden ---
-        history_df = pd.read_csv(APP_CONFIG["files"]["history"], sep=';', parse_dates=["Gespielt_am"])  # immer aktuell laden
-        gespielt = history_df[history_df['Gespielt_am'].dt.date == auswahl_datum]
-        gespielt = gespielt.merge(songs_df[['Songtitel', 'Reifegrad', 'Kommentar']], on='Songtitel', how='left')
-
-        st.write("🎵 Gespielte Songs und Anpassung:")
-        neue_werte = []
-        songs_to_remove = []
-        for i, row in gespielt.iterrows():
-            with st.expander(f"📝 {row['Songtitel']}", expanded=True):
-                col1, col2, col3 = st.columns([2, 1, 1])
-                with col1:
-                    grad = st.slider("Reifegrad", 0, 10, int(row['Reifegrad']) if not pd.isna(row['Reifegrad']) else 5, key=f"grad_{i}")
-                with col2:
-                    kommentar = st.text_input("Kommentar", value=row.get("Kommentar", ""), key=f"kommentar_{i}")
-                with col3:
-                    if st.button("❌ Entfernen", key=f"remove_{i}"):
-                        songs_to_remove.append(row['Songtitel'])
-            neue_werte.append((row['Songtitel'], grad, kommentar))
-
-        # Entferne Songs aus der History, falls gewünscht
-        if songs_to_remove:
-            # Speichere entfernte Songs für Undo
-            if 'undo_removed_songs' not in st.session_state:
-                st.session_state['undo_removed_songs'] = []
-            for removed_song in songs_to_remove:
-                removed_row = history_df[(history_df['Songtitel'] == removed_song) & (history_df['Gespielt_am'].dt.date == auswahl_datum)]
-                if not removed_row.empty:
-                    st.session_state['undo_removed_songs'].append(removed_row.iloc[0].to_dict())
-            history_df = history_df[~((history_df['Songtitel'].isin(songs_to_remove)) & (history_df['Gespielt_am'].dt.date == auswahl_datum))]
-            history_df.to_csv(APP_CONFIG["files"]["history"], sep=';', index=False)
-            st.success(f"{', '.join(songs_to_remove)} aus der Probe am {auswahl_datum} entfernt.")
-            st.rerun()
-
-            # Undo-Button anzeigen, falls Songs entfernt wurden
-            if st.session_state.get('undo_removed_songs'):
-                if st.button("Rückgängig machen (letzten entfernten Song wiederherstellen)"):
-                    last_removed = st.session_state['undo_removed_songs'].pop()
-                    # Füge den Song wieder zur History hinzu
-                    df = pd.DataFrame([last_removed])
-                    df.to_csv(APP_CONFIG["files"]["history"], sep=';', mode='a', header=False, index=False)
-                    st.success(f"Song '{last_removed['Songtitel']}' wurde wiederhergestellt.")
-                    st.rerun()
-
-        if gespielt.shape[0] > 0:
-            if st.button("💾 Änderungen speichern"):
-                for titel, grad, kommentar in neue_werte:
-                    idx = songs_df[songs_df['Songtitel'] == titel].index
-                    if not idx.empty:
-                        songs_df.loc[idx, 'Reifegrad'] = grad
-                        songs_df.loc[idx, 'Kommentar'] = kommentar
-                DataManager.speichere_songliste(songs_df)
-                st.success("Änderungen erfolgreich gespeichert.")
-
-# --- TAB 5: Songliste bearbeiten ---
-with tabs[5]:
-    st.info("""
-    **Songliste bearbeiten:**
-    - Bearbeite, ergänze oder lösche Songs direkt in der Tabelle.
-    - Füge neue Songs hinzu oder exportiere die Liste.
-    - Markiere Songs als Favorit ⭐ und hinterlege individuelle Notizen.
-    """)
-    st.header("✏️ Songliste bearbeiten")
-    # Backup-Button jetzt hier:
-    if st.button("🔄 Backup erstellen"):
-        backup_path = backup_dateien()
-        st.success(f"Backup erstellt: {os.path.basename(backup_path)}")
-    songs_df = get_cached_songliste()
-
-    # Stelle sicher, dass Kommentar und Notiz als String vorliegen
-    if 'Kommentar' in songs_df:
-        songs_df['Kommentar'] = songs_df['Kommentar'].astype(str)
-    if 'Tags' in songs_df:
-        songs_df['Tags'] = songs_df['Tags'].astype(str)
-    if 'Notiz' not in songs_df:
-        songs_df['Notiz'] = ""
-    if 'Favorit' not in songs_df:
-        songs_df['Favorit'] = False
-
-    # Tag-Filter
-    alle_tags = set()
-    for tags in songs_df['Tags'].dropna():
-        for tag in [t.strip() for t in str(tags).split(',') if t.strip()]:
-            alle_tags.add(tag)
-    alle_tags = sorted(alle_tags)
-    selected_tags = st.multiselect("Nach Tags filtern", alle_tags, key="bearbeiten_tagfilter")
-    filtered_df = songs_df.copy()
-    if selected_tags:
-        filtered_df = filtered_df[filtered_df['Tags'].apply(lambda x: any(tag in str(x).split(',') for tag in selected_tags))]
-
-    st.info("Du kannst die Songliste direkt in der Tabelle bearbeiten. Neue Songs als neue Zeile hinzufügen, Zeilen löschen, Felder anpassen. Klicke anschließend auf 'Änderungen speichern'.")
-
-    # Data Editor für die Songliste
-    edited_df = st.data_editor(
-        filtered_df,
-        num_rows="dynamic",
-        use_container_width=True,
-        column_config={
-            "Songtitel": st.column_config.TextColumn("Songtitel", required=True),
-            "Zuletzt_gespielt": st.column_config.DatetimeColumn("Zuletzt gespielt", format="DD.MM.YYYY", required=False),
-            "Reifegrad": st.column_config.NumberColumn("Reifegrad", min_value=0, max_value=10, step=1),
-            "Anzahl_gespielt": st.column_config.NumberColumn("Anzahl gespielt", min_value=0, step=1),
-            "Kommentar": st.column_config.TextColumn("Kommentar", required=False),
-            "Tags": st.column_config.TextColumn("Tags", required=False),
-            "Must_Play": st.column_config.CheckboxColumn("Must-Play", required=False),
-            "Favorit": st.column_config.CheckboxColumn("Favorit ⭐", required=False),
-            "Notiz": st.column_config.TextColumn("Notiz", required=False),
-        },
-        hide_index=True,
-        key="songliste_editor"
+def setlaenge(df, titel):
+    return sekunden_als_text(
+        sum(spielzeit_in_sekunden(v) for v in df[df["Songtitel"].isin(titel)]["Spielzeit"])
     )
 
-    # Änderungen speichern
-    if st.button("💾 Änderungen speichern", key="save_songlist_edits"):
-        edited_df = edited_df[edited_df['Songtitel'].str.strip() != ""]
-        if 'Zuletzt_gespielt' in edited_df:
-            edited_df['Zuletzt_gespielt'] = pd.to_datetime(edited_df['Zuletzt_gespielt'], errors='coerce')
-        if 'Reifegrad' in edited_df:
-            edited_df['Reifegrad'] = pd.to_numeric(edited_df['Reifegrad'], errors='coerce').fillna(5).astype(int)
-        if 'Anzahl_gespielt' in edited_df:
-            edited_df['Anzahl_gespielt'] = pd.to_numeric(edited_df['Anzahl_gespielt'], errors='coerce').fillna(0).astype(int)
-        if 'Must_Play' in edited_df:
-            edited_df['Must_Play'] = edited_df['Must_Play'].fillna(False).astype(bool)
-        if 'Favorit' in edited_df:
-            edited_df['Favorit'] = edited_df['Favorit'].fillna(False).astype(bool)
-        DataManager.speichere_songliste(edited_df)
-        st.success("Songliste erfolgreich gespeichert.")
-        st.rerun()
+T = APP_CONFIG["theme"]
 
-# --- Nach oben Button (global, sticky unten rechts) ---
-scroll_to_top_html = '''
+st.set_page_config(
+    page_title="Songpicker – Foo Fightclub",
+    page_icon="🎸",
+    layout="wide",
+    initial_sidebar_state="collapsed",
+)
+
+# ---------------------------------------------------------------- Design
+st.markdown(
+    f"""
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Anton&family=Inter:wght@400;700;900&display=swap" rel="stylesheet">
 <style>
-#scrollToTopBtn {
-    display: none;
-    position: fixed;
-    bottom: 32px;
-    right: 32px;
-    z-index: 9999;
-    background: #ffe066;
-    color: #222;
-    border: none;
-    border-radius: 50%;
-    width: 48px;
-    height: 48px;
-    font-size: 2rem;
-    box-shadow: 0 2px 8px #0003;
-    cursor: pointer;
-    transition: background 0.2s;
-}
-#scrollToTopBtn:hover {
-    background: #ffd700;
-}
+  :root {{
+    --ink: {T['ink']}; --ink-2: {T['ink_2']}; --paper: {T['paper']};
+    --red: {T['red']}; --red-bright: {T['red_bright']}; --muted: {T['muted']};
+    --line: {T['line']};
+  }}
+  .stApp {{ background: var(--ink); color: var(--paper);
+            font-family: "Inter", system-ui, sans-serif; }}
+  h1, h2, h3 {{ font-family: "Anton", Impact, sans-serif !important;
+                font-weight: 400 !important; text-transform: uppercase;
+                letter-spacing: -.02em; line-height: .95; }}
+  h1 {{ font-size: clamp(44px, 6vw, 76px) !important; }}
+  .ffc-eyebrow {{ color: var(--red-bright); font-size: 12px; font-weight: 900;
+                  letter-spacing: .18em; text-transform: uppercase; margin-bottom: 6px; }}
+  .stButton > button {{
+      background: var(--red); color: #fff; border: 1px solid var(--red);
+      border-radius: 0; min-height: 46px; font-weight: 900; font-size: 13px;
+      letter-spacing: .08em; text-transform: uppercase; transition: transform .15s ease; }}
+  .stButton > button:hover {{ background: #e65343; border-color: #e65343;
+                              color: #fff; transform: translateY(-2px); }}
+  .stTabs [data-baseweb="tab-list"] {{ gap: 4px; border-bottom: 1px solid var(--line); }}
+  .stTabs [data-baseweb="tab"] {{ background: transparent; border-radius: 0;
+      font-weight: 800; font-size: 13px; letter-spacing: .06em; text-transform: uppercase; }}
+  .stTabs [aria-selected="true"] {{ border-bottom: 2px solid var(--red-bright); }}
+  div[data-testid="stMetric"] {{ background: var(--ink-2); border: 1px solid var(--line);
+      padding: 16px 18px; }}
+  div[data-testid="stMetricValue"] {{ font-family: "Anton", sans-serif; font-weight: 400; }}
+  .ffc-card {{ background: var(--ink-2); border: 1px solid var(--line);
+               border-left: 3px solid var(--red); padding: 14px 16px; margin-bottom: 8px; }}
+  .ffc-song {{ font-weight: 900; font-size: 16px; letter-spacing: .01em; }}
+  .ffc-bar {{ height: 8px; background: rgba(231,222,209,.14); margin: 9px 0 5px; }}
+  .ffc-bar > div {{ height: 100%; }}
+  .ffc-meta {{ color: var(--muted); font-size: 12px; font-weight: 700;
+               letter-spacing: .06em; text-transform: uppercase; }}
+  .ffc-banner {{ border-left: 3px solid var(--red-bright); background: rgba(255,101,80,.08);
+                 padding: 12px 16px; margin-bottom: 18px; font-size: 14px; }}
+  @media (max-width: 700px) {{
+    .stTabs [data-baseweb="tab-list"] {{ flex-wrap: wrap; }}
+    .stButton > button {{ width: 100%; }}
+  }}
 </style>
-<button id="scrollToTopBtn" onclick="window.scrollTo({top: 0, behavior: 'smooth'});">⬆️</button>
-<script>
-window.onscroll = function() {
-    var btn = document.getElementById("scrollToTopBtn");
-    if (!btn) return;
-    if (document.body.scrollTop > 300 || document.documentElement.scrollTop > 300) {
-        btn.style.display = "block";
-    } else {
-        btn.style.display = "none";
-    }
-};
-</script>
-'''
-st.markdown(scroll_to_top_html, unsafe_allow_html=True)
+""",
+    unsafe_allow_html=True,
+)
+
+
+@st.cache_data(ttl=300)
+def songs():
+    return DataManager.songliste_mit_historie()
+
+
+@st.cache_data(ttl=300)
+def history():
+    return DataManager.lade_history()
+
+
+def frisch():
+    st.cache_data.clear()
+
+
+# ---------------------------------------------------------------- Kopf
+kopf_links, kopf_rechts = st.columns([1, 6])
+with kopf_links:
+    if os.path.exists(APP_CONFIG["files"]["logo"]):
+        st.image(APP_CONFIG["files"]["logo"], width=96)
+with kopf_rechts:
+    st.markdown('<p class="ffc-eyebrow">Proberaum-Werkzeug</p>', unsafe_allow_html=True)
+    st.markdown("# Songpicker")
+
+if not EDIT_MODE:
+    st.markdown(
+        '<div class="ffc-banner"><b>Nur-Lesen.</b> Diese Ansicht zeigt den Stand, '
+        "der zuletzt eingecheckt wurde. Bearbeitet wird lokal — so geht nichts "
+        "verloren, wenn die App neu startet.</div>",
+        unsafe_allow_html=True,
+    )
+
+namen = ["Nächste Probe", "Analyse", "History"]
+if EDIT_MODE:
+    namen += ["Auswahl", "Nachbereitung", "Songliste"]
+tabs = st.tabs(namen)
+
+# ---------------------------------------------------------------- Nächste Probe
+with tabs[0]:
+    geplant = DataManager.lade_naechste_probe()
+    df = songs()
+    if not geplant:
+        st.info("Für die nächste Probe ist noch keine Auswahl hinterlegt.")
+    else:
+        st.markdown("### Geplante Songs")
+        for song in geplant:
+            treffer = df[df["Songtitel"] == song]
+            if treffer.empty:
+                st.markdown(
+                    f'<div class="ffc-card"><span class="ffc-song">{song}</span>'
+                    '<div class="ffc-meta">nicht in der Songliste</div></div>',
+                    unsafe_allow_html=True,
+                )
+                continue
+            zeile = treffer.iloc[0]
+            g = zeile["Reifegrad"]
+            breite = 0 if pd.isna(g) else int(g) * 10
+            farbe = "rgba(231,222,209,.25)" if pd.isna(g) else color_for_reifegrad(g)
+            stern = "★ " if zeile["Must_Play"] else ""
+            hinweis = kommentar_fuer_reifegrad(g)
+            zeit = f" · {zeile['Spielzeit']}" if zeile["Spielzeit"] else ""
+            st.markdown(
+                f"""<div class="ffc-card">
+                    <span class="ffc-song">{stern}{song}</span>
+                    <div class="ffc-bar"><div style="width:{breite}%;
+                         background:{farbe}"></div></div>
+                    <div class="ffc-meta">Reifegrad {grad_text(g)}{zeit}
+                         {'· ' + hinweis if hinweis else ''}</div>
+                </div>""",
+                unsafe_allow_html=True,
+            )
+        st.caption(f"Gesamtspielzeit der Auswahl: {setlaenge(df, geplant)}")
+
+# ---------------------------------------------------------------- Analyse
+with tabs[1]:
+    df, hist = songs(), history()
+    if df.empty:
+        st.warning("Keine Songliste vorhanden.")
+    else:
+        im_set = df[df["Status"] == "im Set"]
+        bewertet = df["Reifegrad"].notna()
+        a, b, c, d = st.columns(4)
+        a.metric("Songs", len(df), f"{len(im_set)} im Set")
+        a2 = df.loc[bewertet, "Reifegrad"]
+        b.metric("Ø Reifegrad", f"{a2.mean():.1f}" if len(a2) else "–",
+                 f"{int(bewertet.sum())} von {len(df)} bewertet")
+        c.metric("Unter 4", int((df["Reifegrad"] < 4).sum()))
+        d.metric("Setlänge", setlaenge(df, im_set["Songtitel"]))
+
+        offen = df[~bewertet]
+        if not offen.empty:
+            st.markdown(
+                f'<div class="ffc-banner"><b>{len(offen)} Songs sind noch nicht bewertet.</b> '
+                "Bis das nachgeholt ist, sind Durchschnitt und gewichtete Auswahl nur "
+                "eingeschränkt aussagekräftig.</div>",
+                unsafe_allow_html=True,
+            )
+            with st.expander(f"Die {len(offen)} unbewerteten Songs"):
+                st.dataframe(offen[["Songtitel", "Status", "Spielzeit"]],
+                             use_container_width=True, hide_index=True)
+
+        zu_klaeren = df[df["Status"] == "zu klaeren"]
+        if not zu_klaeren.empty:
+            with st.expander(f"{len(zu_klaeren)} Songs mit ungeklärtem Status"):
+                st.caption("Songtext vorhanden, aber unklar, ob gelernt, Kandidat oder Altlast.")
+                st.dataframe(zu_klaeren[["Songtitel", "Interpret"]],
+                             use_container_width=True, hide_index=True)
+
+        if hist.empty:
+            st.info("Noch keine Spielhistorie.")
+        else:
+            proben = hist["Gespielt_am"].dt.date.nunique()
+            e, f = st.columns(2)
+            e.metric("Proben erfasst", proben)
+            f.metric("Ø Songs je Probe", f"{len(hist)/proben:.1f}" if proben else "–")
+
+            plt.style.use("dark_background")
+            g1, g2 = st.columns(2)
+            with g1:
+                st.markdown("### Meistgespielt")
+                top = hist["Songtitel"].value_counts().head(10).iloc[::-1]
+                grade = {k: (5 if pd.isna(v) else v)
+                         for k, v in df.set_index("Songtitel")["Reifegrad"].items()}
+                fig, ax = plt.subplots(figsize=(7, 5))
+                for obj in (fig, ax):
+                    obj.set_facecolor(T["ink"])
+                ax.barh(top.index, top.values,
+                        color=[color_for_reifegrad_mpl(grade.get(s, 5)) for s in top.index])
+                ax.tick_params(colors=T["paper"])
+                for s in ax.spines.values():
+                    s.set_visible(False)
+                plt.tight_layout()
+                st.pyplot(fig)
+            with g2:
+                st.markdown("### Reifegrad-Verteilung")
+                fig, ax = plt.subplots(figsize=(7, 5))
+                for obj in (fig, ax):
+                    obj.set_facecolor(T["ink"])
+                ax.hist(df["Reifegrad"].dropna().astype(int), bins=range(0, 12),
+                        color=T["red"], edgecolor=T["ink"])
+                ax.set_xlabel("Reifegrad", color=T["paper"])
+                ax.tick_params(colors=T["paper"])
+                for s in ax.spines.values():
+                    s.set_visible(False)
+                plt.tight_layout()
+                st.pyplot(fig)
+
+        st.divider()
+        st.markdown("### Datenqualität")
+        abweichung = df[df["Anzahl_gespielt"] != df["Anzahl_laut_Historie"]]
+        if abweichung.empty:
+            st.success("Songliste und Spielhistorie stimmen überein.")
+        else:
+            st.warning(
+                f"Bei {len(abweichung)} von {len(df)} Songs weicht die gepflegte Zählung "
+                "von der Spielhistorie ab. Die Historie erfasst vermutlich erst einen "
+                "Teil der Proben. Solange das ungeklärt ist, ist die Spalte "
+                "'Anzahl gespielt' keine belastbare Kennzahl."
+            )
+            st.dataframe(
+                abweichung[["Songtitel", "Anzahl_gespielt", "Anzahl_laut_Historie"]]
+                .rename(columns={"Anzahl_gespielt": "in der Songliste",
+                                 "Anzahl_laut_Historie": "laut Historie"}),
+                use_container_width=True, hide_index=True,
+            )
+
+        st.divider()
+        x, y = st.columns(2)
+        x.download_button("Songliste als CSV",
+                          df.to_csv(index=False, sep=";").encode("utf-8-sig"),
+                          "songliste_export.csv", "text/csv", use_container_width=True)
+        if not hist.empty:
+            y.download_button("Historie als CSV",
+                              hist.to_csv(index=False, sep=";").encode("utf-8-sig"),
+                              "spielhistorie_export.csv", "text/csv", use_container_width=True)
+
+# ---------------------------------------------------------------- History
+with tabs[2]:
+    hist = history()
+    if hist.empty:
+        st.info("Noch keine Einträge.")
+    else:
+        jahre = sorted(hist["Gespielt_am"].dt.year.unique().astype(int), reverse=True)
+        jahr = st.selectbox("Jahr", ["Alle"] + [str(j) for j in jahre])
+        gefiltert = hist if jahr == "Alle" else hist[hist["Gespielt_am"].dt.year == int(jahr)]
+        st.dataframe(
+            gefiltert.sort_values("Gespielt_am", ascending=False),
+            use_container_width=True, hide_index=True,
+            column_config={"Gespielt_am": st.column_config.DateColumn("Datum", format="DD.MM.YYYY")},
+        )
+
+# ================================================================ Bearbeitung
+if EDIT_MODE:
+    # ------------------------------------------------------------ Auswahl
+    with tabs[3]:
+        df = songs()
+        if df.empty:
+            st.error("Songliste ist leer.")
+        else:
+            f1, f2 = st.columns(2)
+            stati = sorted(df["Status"].unique())
+            gewaehlte_stati = f1.multiselect("Status", stati, default=["im Set"] if "im Set" in stati else stati)
+            alle_tags = sorted({t.strip() for s in df["Tags"] for t in str(s).split(",") if t.strip()})
+            gewaehlte_tags = f2.multiselect("Nach Tags filtern", alle_tags)
+            basis = df[df["Status"].isin(gewaehlte_stati)] if gewaehlte_stati else df
+            if gewaehlte_tags:
+                basis = basis[basis["Tags"].apply(
+                    lambda x: any(t in [i.strip() for i in str(x).split(",")] for t in gewaehlte_tags))]
+
+            s1, s2 = st.columns(2)
+            anzahl = s1.slider("Anzahl Songs", 3, max(3, min(15, len(basis))), min(5, len(basis)))
+            datum = s2.date_input("Datum der Probe", value=datetime.today())
+
+            with st.expander("Gewichtung"):
+                # Vorher waren diese beiden Regler vertauscht: der Must-Play-Regler
+                # wirkte auf den Reifegrad und umgekehrt.
+                w_reifegrad = st.slider(
+                    "Gewicht: niedriger Reifegrad", 0.5, 3.0, 1.0, 0.1,
+                    help="Je höher, desto stärker werden schlecht sitzende Songs bevorzugt.")
+                w_mustplay = st.slider(
+                    "Gewicht: Must-Play", 0.0, 5.0, 2.0, 0.5,
+                    help="Je höher, desto stärker werden als Must-Play markierte Songs bevorzugt.")
+                w_pause = st.slider(
+                    "Gewicht: lange nicht gespielt", 0.0, 5.0, 2.0, 0.5)
+
+            if st.button("Songs auswählen", use_container_width=True):
+                tage = (pd.Timestamp.today().normalize() - basis["Zuletzt_gespielt"]).dt.days
+                tage_norm = tage / max(tage.max(), 1)
+                grad = basis["Reifegrad"].fillna(5).astype(int)
+                gewicht = (
+                    (10 - grad) * w_reifegrad
+                    + basis["Must_Play"].astype(int) * w_mustplay
+                    + tage_norm * w_pause
+                ).clip(lower=0.1)
+                st.session_state.auswahl = (
+                    basis.sample(n=min(anzahl, len(basis)), weights=gewicht,
+                                 random_state=random.randint(0, 10_000))["Songtitel"].tolist()
+                )
+
+            auswahl = st.session_state.get("auswahl", [])
+            if auswahl:
+                st.markdown("### Auswahl")
+                for song in auswahl:
+                    z = df[df["Songtitel"] == song].iloc[0]
+                    g = z["Reifegrad"]
+                    st.markdown(
+                        f"""<div class="ffc-card">
+                            <span class="ffc-song">{'★ ' if z['Must_Play'] else ''}{song}</span>
+                            <div class="ffc-bar"><div style="width:{0 if pd.isna(g) else int(g)*10}%;
+                                 background:{'rgba(231,222,209,.25)' if pd.isna(g) else color_for_reifegrad(g)}"></div></div>
+                            <div class="ffc-meta">Reifegrad {grad_text(g)} ·
+                                 zuletzt {z['Zuletzt_gespielt'].strftime('%d.%m.%Y')}</div>
+                        </div>""", unsafe_allow_html=True)
+                st.caption(f"Gesamtspielzeit: {setlaenge(df, auswahl)}")
+
+                rest = sorted(set(df["Songtitel"]) - set(auswahl))
+                if rest:
+                    e1, e2 = st.columns([3, 1])
+                    zusatz = e1.selectbox("Song ergänzen", rest)
+                    if e2.button("Hinzufügen", use_container_width=True):
+                        st.session_state.auswahl.append(zusatz)
+                        st.rerun()
+
+                if st.button("Auswahl für die nächste Probe speichern", use_container_width=True):
+                    if DataManager.speichere_naechste_probe(auswahl):
+                        st.success("Gespeichert. Nicht vergessen: CSVs committen.")
+
+                if st.button("Als gespielt eintragen", use_container_width=True):
+                    if DataManager.ergaenze_history(auswahl, datum):
+                        aktuell = DataManager.lade_songliste()
+                        maske = aktuell["Songtitel"].isin(auswahl)
+                        aktuell.loc[maske, "Anzahl_gespielt"] += 1
+                        aktuell.loc[maske, "Zuletzt_gespielt"] = pd.to_datetime(datum)
+                        DataManager.speichere_songliste(aktuell)
+                        frisch()
+                        st.success("In der Historie vermerkt.")
+                        st.rerun()
+
+    # ------------------------------------------------------------ Nachbereitung
+    with tabs[4]:
+        hist, df = history(), songs()
+        if hist.empty:
+            st.info("Noch keine Proben erfasst.")
+        else:
+            termine = sorted(hist["Gespielt_am"].dt.date.unique(), reverse=True)
+            termin = st.selectbox("Probedatum", termine,
+                                  format_func=lambda d: d.strftime("%d.%m.%Y"))
+            gespielt = hist[hist["Gespielt_am"].dt.date == termin]["Songtitel"].tolist()
+            st.caption(f"{len(gespielt)} Songs an diesem Termin")
+
+            neue = {}
+            for song in gespielt:
+                z = df[df["Songtitel"] == song]
+                roh = z.iloc[0]["Reifegrad"] if not z.empty else pd.NA
+                akt = 5 if pd.isna(roh) else int(roh)
+                kom = str(z.iloc[0]["Kommentar"]) if not z.empty else ""
+                with st.expander(song, expanded=False):
+                    c1, c2 = st.columns([1, 2])
+                    neue[song] = (
+                        c1.slider("Reifegrad", 0, 10, akt, key=f"r_{song}"),
+                        c2.text_input("Kommentar", value=kom, key=f"k_{song}"),
+                    )
+
+            if neue and st.button("Änderungen speichern", use_container_width=True):
+                aktuell = DataManager.lade_songliste()
+                for song, (grad, kommentar) in neue.items():
+                    idx = aktuell[aktuell["Songtitel"] == song].index
+                    aktuell.loc[idx, "Reifegrad"] = grad
+                    aktuell.loc[idx, "Kommentar"] = kommentar
+                if DataManager.speichere_songliste(aktuell):
+                    frisch()
+                    st.success("Gespeichert.")
+                    st.rerun()
+
+    # ------------------------------------------------------------ Songliste
+    with tabs[5]:
+        if st.button("Backup erstellen"):
+            st.success(f"Backup: {os.path.basename(backup_dateien())}")
+
+        bearbeitet = st.data_editor(
+            songs(), num_rows="dynamic", use_container_width=True, hide_index=True,
+            column_config={
+                "Songtitel": st.column_config.TextColumn("Songtitel", required=True),
+                "Zuletzt_gespielt": st.column_config.DateColumn("Zuletzt gespielt", format="DD.MM.YYYY"),
+                "Interpret": st.column_config.TextColumn("Interpret"),
+                "Status": st.column_config.SelectboxColumn(
+                    "Status", options=["im Set", "in Arbeit", "Kandidat", "nicht im Repertoire", "zu klaeren"]),
+                "Spielzeit": st.column_config.TextColumn("Spielzeit", help="mm:ss"),
+                "Reifegrad": st.column_config.NumberColumn(
+                    "Reifegrad", min_value=0, max_value=10, step=1, help="leer = noch nicht bewertet"),
+                "Anzahl_gespielt": st.column_config.NumberColumn("Gespielt", min_value=0, step=1),
+                "Must_Play": st.column_config.CheckboxColumn("Must-Play"),
+                "Favorit": st.column_config.CheckboxColumn("Favorit"),
+            },
+            key="editor",
+        )
+        if st.button("Songliste speichern", use_container_width=True):
+            sauber = bearbeitet[bearbeitet["Songtitel"].astype(str).str.strip() != ""]
+            if DataManager.speichere_songliste(sauber):
+                frisch()
+                st.success("Gespeichert. Nicht vergessen: CSVs committen.")
+                st.rerun()
