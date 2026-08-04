@@ -12,7 +12,8 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import streamlit as st
 
-from config import APP_CONFIG, EDIT_MODE
+import github_speicher
+from config import APP_CONFIG, EDIT_ENV
 from data_manager import DataManager
 from utils import (
     backup_dateien,
@@ -116,11 +117,45 @@ with kopf_rechts:
     st.markdown('<p class="ffc-eyebrow">Proberaum-Werkzeug</p>', unsafe_allow_html=True)
     st.markdown("# Songpicker")
 
+# ---------------------------------------------------------------- Anmeldung
+# Standard: nur lesen. Bearbeiten entweder lokal per Umgebungsvariable
+# oder im Browser per Passwort aus den Streamlit-Secrets.
+if "darf_bearbeiten" not in st.session_state:
+    st.session_state.darf_bearbeiten = EDIT_ENV
+
+with st.sidebar:
+    st.markdown("### Zugang")
+    if st.session_state.darf_bearbeiten:
+        st.success("Bearbeiten aktiv")
+        if github_speicher.verfuegbar():
+            st.caption("Änderungen werden ins GitHub-Repository committet.")
+        else:
+            st.warning(
+                "Kein GitHub-Token hinterlegt. Änderungen gelten nur für diese "
+                "Sitzung und sind beim nächsten Neustart weg."
+            )
+        if not EDIT_ENV and st.button("Abmelden", use_container_width=True):
+            st.session_state.darf_bearbeiten = False
+            st.rerun()
+    elif github_speicher.passwort_gesetzt():
+        eingabe = st.text_input("Passwort", type="password",
+                                label_visibility="collapsed", placeholder="Passwort")
+        if st.button("Anmelden", use_container_width=True):
+            if github_speicher.pruefe_passwort(eingabe):
+                st.session_state.darf_bearbeiten = True
+                st.rerun()
+            else:
+                st.error("Passwort stimmt nicht.")
+    else:
+        st.caption("Nur-Lesen-Ansicht.")
+
+EDIT_MODE = st.session_state.darf_bearbeiten
+
 if not EDIT_MODE:
     st.markdown(
-        '<div class="ffc-banner"><b>Nur-Lesen.</b> Diese Ansicht zeigt den Stand, '
-        "der zuletzt eingecheckt wurde. Bearbeitet wird lokal — so geht nichts "
-        "verloren, wenn die App neu startet.</div>",
+        '<div class="ffc-banner"><b>Nur-Lesen.</b> Das ist die Ansicht für die Band: '
+        "was für die nächste Probe ansteht, wie der Stand der Songs ist und was "
+        "wann gespielt wurde. Bearbeitet wird an einer Stelle.</div>",
         unsafe_allow_html=True,
     )
 

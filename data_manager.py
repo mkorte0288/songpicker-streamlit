@@ -4,6 +4,7 @@ import pandas as pd
 import streamlit as st  # war vorher nicht importiert, obwohl st.error() benutzt wurde
 
 from config import APP_CONFIG
+import github_speicher
 from utils import backup_dateien, parse_datum, spielzeit_in_sekunden
 
 SPALTEN = {
@@ -108,7 +109,9 @@ class DataManager:
                 if spalte not in df.columns:
                     df[spalte] = default
             df = df[[s for s in SPALTEN if s in df.columns]]
-            df.to_csv(APP_CONFIG["files"]["songs"], sep=";", index=False)
+            pfad = APP_CONFIG["files"]["songs"]
+            df.to_csv(pfad, sep=";", index=False)
+            DataManager._sichere_extern(pfad, "Songliste aktualisiert")
             return True
         except Exception as e:
             st.error(f"Songliste konnte nicht gespeichert werden: {e}")
@@ -129,9 +132,28 @@ class DataManager:
             return pd.DataFrame(columns=["Songtitel", "Gespielt_am"])
 
     @staticmethod
+    def _sichere_extern(pfad, nachricht):
+        """Committet die lokal geschriebene Datei ins Repository.
+
+        Ohne das waere jede Aenderung beim naechsten Neustart der
+        Cloud-Instanz verloren.
+        """
+        if not github_speicher.verfuegbar():
+            return
+        with open(pfad, encoding="utf-8") as f:
+            inhalt = f.read()
+        ok, meldung = github_speicher.speichere(pfad, inhalt, nachricht)
+        if ok:
+            st.toast(meldung, icon="✅")
+        else:
+            st.warning(f"Lokal gespeichert, aber nicht ins Repository: {meldung}")
+
+    @staticmethod
     def speichere_history(df):
         try:
-            df.to_csv(APP_CONFIG["files"]["history"], sep=";", index=False)
+            pfad = APP_CONFIG["files"]["history"]
+            df.to_csv(pfad, sep=";", index=False)
+            DataManager._sichere_extern(pfad, "Spielhistorie aktualisiert")
             return True
         except Exception as e:
             st.error(f"Spielhistorie konnte nicht gespeichert werden: {e}")
@@ -160,8 +182,10 @@ class DataManager:
     @staticmethod
     def speichere_naechste_probe(songs):
         try:
-            with open(APP_CONFIG["files"]["naechste_probe"], "w", encoding="utf-8") as f:
+            pfad = APP_CONFIG["files"]["naechste_probe"]
+            with open(pfad, "w", encoding="utf-8") as f:
                 f.write("\n".join(songs) + ("\n" if songs else ""))
+            DataManager._sichere_extern(pfad, "Auswahl fuer die naechste Probe")
             return True
         except Exception as e:
             st.error(f"Auswahl konnte nicht gespeichert werden: {e}")

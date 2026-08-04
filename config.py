@@ -37,12 +37,11 @@ APP_CONFIG = {
 }
 
 # --- Bearbeitungsmodus -------------------------------------------------
-# Die App laeuft standardmaessig NUR-LESEN. Das ist Absicht: auf Streamlit
-# Community Cloud ist das Dateisystem fluechtig, gespeicherte Aenderungen
-# waeren beim naechsten Neustart weg.
+# Zwei Wege, dieselbe Wirkung:
 #
-# Ablauf: lokal bearbeiten -> CSVs ins Git-Repo committen -> die
-# veroeffentlichte App zeigt der Band den aktuellen Stand.
+#   lokal      SONGPICKER_EDIT=1 streamlit run songpicker_streamlit.py
+#   im Browser Passwort in der Seitenleiste (Streamlit-Secret edit_password)
 #
-# Lokal einschalten:   SONGPICKER_EDIT=1 streamlit run songpicker_streamlit.py
-EDIT_MODE = os.environ.get("SONGPICKER_EDIT", "").strip() in ("1", "true", "yes", "ja")
+# Standard ist immer nur-lesen. Wer den Link bekommt, kann nichts kaputt
+# machen.
+EDIT_ENV = os.environ.get("SONGPICKER_EDIT", "").strip() in ("1", "true", "yes", "ja")
