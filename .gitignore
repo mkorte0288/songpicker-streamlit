@@ -1,0 +1,6 @@
+# In GitHub als ".gitignore" anlegen (Dateiname mit fuehrendem Punkt).
+# Verhindert, dass Token und Passwort versehentlich oeffentlich werden.
+.streamlit/secrets.toml
+__pycache__/
+*.pyc
+backups/
