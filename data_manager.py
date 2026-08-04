@@ -126,7 +126,11 @@ class DataManager:
             df = pd.read_csv(pfad, sep=";", encoding="utf-8-sig")
             df.columns = df.columns.str.strip()
             df["Gespielt_am"] = parse_datum(df["Gespielt_am"])
-            return df.dropna(subset=["Gespielt_am"])
+            df = df.dropna(subset=["Gespielt_am"])
+            # Ein Song kann an einem Abend nur einmal gespielt worden sein.
+            # In der gewachsenen Datei stand "Run" 17-mal fuer denselben
+            # Probentag — offenbar wurde beim Eintragen mehrfach angehaengt.
+            return df.drop_duplicates(subset=["Songtitel", "Gespielt_am"])
         except Exception as e:
             st.error(f"Spielhistorie konnte nicht gelesen werden: {e}")
             return pd.DataFrame(columns=["Songtitel", "Gespielt_am"])
@@ -166,10 +170,23 @@ class DataManager:
             neu = pd.DataFrame({"Songtitel": songtitel, "Gespielt_am": pd.to_datetime(datum)})
             bestand = DataManager.lade_history()
             zusammen = pd.concat([bestand, neu], ignore_index=True)
+            zusammen = zusammen.drop_duplicates(subset=["Songtitel", "Gespielt_am"])
             return DataManager.speichere_history(zusammen)
         except Exception as e:
             st.error(f"Spielhistorie konnte nicht ergaenzt werden: {e}")
             return False
+
+    @staticmethod
+    def bereinige_history():
+        """Schreibt die entdoppelte Historie zurueck. Gibt (vorher, nachher) zurueck."""
+        try:
+            roh = pd.read_csv(APP_CONFIG["files"]["history"], sep=";", encoding="utf-8-sig")
+            vorher = len(roh)
+        except Exception:
+            vorher = 0
+        sauber = DataManager.lade_history()
+        DataManager.speichere_history(sauber)
+        return vorher, len(sauber)
 
     @staticmethod
     def lade_naechste_probe():

@@ -293,6 +293,24 @@ with tabs[1]:
                 use_container_width=True, hide_index=True,
             )
 
+        if EDIT_MODE:
+            try:
+                roh = pd.read_csv(APP_CONFIG["files"]["history"], sep=";", encoding="utf-8-sig")
+                ueberzaehlig = len(roh) - len(hist)
+            except Exception:
+                ueberzaehlig = 0
+            if ueberzaehlig > 0:
+                st.warning(
+                    f"Die Datei `spielhistorie.csv` enthält {ueberzaehlig} überzählige Zeilen: "
+                    "derselbe Song mehrfach für denselben Probentag. Die App rechnet bereits "
+                    "ohne sie, die Datei ist aber noch unsauber."
+                )
+                if st.button("Spielhistorie bereinigen", use_container_width=True):
+                    vorher, nachher = DataManager.bereinige_history()
+                    frisch()
+                    st.success(f"{vorher} Zeilen auf {nachher} reduziert.")
+                    st.rerun()
+
         st.divider()
         x, y = st.columns(2)
         x.download_button("Songliste als CSV",
@@ -387,7 +405,8 @@ if EDIT_MODE:
                     e1, e2 = st.columns([3, 1])
                     zusatz = e1.selectbox("Song ergänzen", rest)
                     if e2.button("Hinzufügen", use_container_width=True):
-                        st.session_state.auswahl.append(zusatz)
+                        if zusatz not in st.session_state.auswahl:
+                            st.session_state.auswahl.append(zusatz)
                         st.rerun()
 
                 if st.button("Auswahl für die nächste Probe speichern", use_container_width=True):
@@ -414,11 +433,12 @@ if EDIT_MODE:
             termine = sorted(hist["Gespielt_am"].dt.date.unique(), reverse=True)
             termin = st.selectbox("Probedatum", termine,
                                   format_func=lambda d: d.strftime("%d.%m.%Y"))
-            gespielt = hist[hist["Gespielt_am"].dt.date == termin]["Songtitel"].tolist()
+            gespielt = list(dict.fromkeys(
+                hist[hist["Gespielt_am"].dt.date == termin]["Songtitel"].tolist()))
             st.caption(f"{len(gespielt)} Songs an diesem Termin")
 
             neue = {}
-            for song in gespielt:
+            for nr, song in enumerate(gespielt):
                 z = df[df["Songtitel"] == song]
                 roh = z.iloc[0]["Reifegrad"] if not z.empty else pd.NA
                 akt = 5 if pd.isna(roh) else int(roh)
@@ -426,8 +446,8 @@ if EDIT_MODE:
                 with st.expander(song, expanded=False):
                     c1, c2 = st.columns([1, 2])
                     neue[song] = (
-                        c1.slider("Reifegrad", 0, 10, akt, key=f"r_{song}"),
-                        c2.text_input("Kommentar", value=kom, key=f"k_{song}"),
+                        c1.slider("Reifegrad", 0, 10, akt, key=f"r_{termin}_{nr}"),
+                        c2.text_input("Kommentar", value=kom, key=f"k_{termin}_{nr}"),
                     )
 
             if neue and st.button("Änderungen speichern", use_container_width=True):
