@@ -1,5 +1,11 @@
+# Palette der Foo-Fightclub-Website (assets/css/styles.css, v16)
 [theme]
-primaryColor = "#fcdf1f"
-backgroundColor = "#0e1117"
-secondaryBackgroundColor = "#262730"
-textColor = "#fafafa" 
+base = "dark"
+primaryColor = "#d33b2e"
+backgroundColor = "#101722"
+secondaryBackgroundColor = "#182332"
+textColor = "#e7ded1"
+font = "sans serif"
+
+[server]
+headless = true
