@@ -33,7 +33,12 @@ def _conf(schluessel, standard=None):
 
 def verfuegbar():
     """True, wenn Token und Repository hinterlegt sind."""
-    return bool(_conf("github_token") and _conf("github_repo"))
+    # Preview-Schutz: niemals in main oder die echte Songpicker-Datenbasis schreiben.
+    return bool(
+        _conf("github_token")
+        and _conf("github_repo") == "mkorte0288/songpicker-streamlit"
+        and _conf("github_branch") == "preview/songpicker-validation-20261104"
+    )
 
 
 def passwort_gesetzt():
