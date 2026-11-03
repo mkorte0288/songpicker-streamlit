@@ -392,15 +392,23 @@ if EDIT_MODE:
             if auswahl:
                 st.markdown("### Auswahl")
                 for nr, song in enumerate(auswahl):
-                    z = df[df["Songtitel"] == song].iloc[0]
+                    treffer = df[df["Songtitel"] == song]
+                    if treffer.empty:
+                        st.warning(f"{song} ist nicht mehr in der Songliste.")
+                        continue
+                    z = treffer.iloc[0]
                     g = z["Reifegrad"]
+                    zuletzt = (
+                        "noch nie" if z["Zuletzt_gespielt"].year <= 1900
+                        else z["Zuletzt_gespielt"].strftime("%d.%m.%Y")
+                    )
                     st.markdown(
                         f"""<div class="ffc-card">
                             <span class="ffc-song">{'★ ' if z['Must_Play'] else ''}{escape(song)}</span>
                             <div class="ffc-bar"><div style="width:{0 if pd.isna(g) else int(g)*10}%;
                                  background:{'rgba(231,222,209,.25)' if pd.isna(g) else color_for_reifegrad(g)}"></div></div>
                             <div class="ffc-meta">Reifegrad {grad_text(g)} ·
-                                 zuletzt {z['Zuletzt_gespielt'].strftime('%d.%m.%Y')}</div>
+                                 zuletzt {zuletzt}</div>
                         </div>""", unsafe_allow_html=True)
                     if st.button(f"{song} entfernen", key=f"entfernen_{nr}"):
                         st.session_state.auswahl.remove(song)
