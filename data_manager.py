@@ -1,9 +1,10 @@
 import os
+from io import StringIO
 
 import pandas as pd
 import streamlit as st  # war vorher nicht importiert, obwohl st.error() benutzt wurde
 
-from config import APP_CONFIG
+from config import APP_CONFIG, EDIT_ENV
 import github_speicher
 from utils import backup_dateien, parse_datum, spielzeit_in_sekunden
 
@@ -102,17 +103,17 @@ class DataManager:
     @staticmethod
     def speichere_songliste(df):
         try:
-            if os.path.exists(APP_CONFIG["files"]["songs"]):
-                backup_dateien()
             df = df.copy()
             for spalte, default in SPALTEN.items():
                 if spalte not in df.columns:
                     df[spalte] = default
-            df = df[[s for s in SPALTEN if s in df.columns]]
+            df = df[list(SPALTEN)]
+            inhalt = StringIO()
+            df.to_csv(inhalt, sep=";", index=False)
             pfad = APP_CONFIG["files"]["songs"]
-            df.to_csv(pfad, sep=";", index=False)
-            DataManager._sichere_extern(pfad, "Songliste aktualisiert")
-            return True
+            if os.path.exists(pfad):
+                backup_dateien()
+            return DataManager._schreibe_mit_sync(pfad, inhalt.getvalue(), "Songliste aktualisiert")
         except Exception as e:
             st.error(f"Songliste konnte nicht gespeichert werden: {e}")
             return False
@@ -136,57 +137,100 @@ class DataManager:
             return pd.DataFrame(columns=["Songtitel", "Gespielt_am"])
 
     @staticmethod
-    def _sichere_extern(pfad, nachricht):
-        """Committet die lokal geschriebene Datei ins Repository.
+    def _schreibe_mit_sync(pfad, inhalt, nachricht):
+        """Lokal speichern und bei GitHub-Fehler den alten Stand wiederherstellen.
 
-        Ohne das waere jede Aenderung beim naechsten Neustart der
-        Cloud-Instanz verloren.
+        Lokal ohne GitHub ist nur im ausdrücklich aktivierten lokalen Edit-Modus erlaubt.
+        Auf der Community Cloud wäre eine rein lokale Erfolgsmeldung irreführend.
         """
-        if not github_speicher.verfuegbar():
-            return
-        with open(pfad, encoding="utf-8") as f:
-            inhalt = f.read()
-        ok, meldung = github_speicher.speichere(pfad, inhalt, nachricht)
-        if ok:
-            st.toast(meldung, icon="✅")
-        else:
-            st.warning(f"Lokal gespeichert, aber nicht ins Repository: {meldung}")
+        if not github_speicher.verfuegbar() and not EDIT_ENV:
+            st.error("Speichern nicht möglich: GitHub-Synchronisierung ist nicht konfiguriert.")
+            return False
+        existiert = os.path.exists(pfad)
+        try:
+            vorher = None
+            if existiert:
+                with open(pfad, encoding="utf-8") as datei:
+                    vorher = datei.read()
+            tmp = f"{pfad}.tmp"
+            with open(tmp, "w", encoding="utf-8", newline="") as datei:
+                datei.write(inhalt)
+            os.replace(tmp, pfad)
+            if github_speicher.verfuegbar():
+                ok, meldung = github_speicher.speichere(pfad, inhalt, nachricht)
+                if not ok:
+                    try:
+                        if existiert:
+                            with open(tmp, "w", encoding="utf-8", newline="") as datei:
+                                datei.write(vorher)
+                            os.replace(tmp, pfad)
+                        else:
+                            os.remove(pfad)
+                    except OSError as e:
+                        st.error(f"Wiederherstellung der lokalen Datei fehlgeschlagen: {e}")
+                    st.error(f"Änderung nicht gespeichert: {meldung}")
+                    return False
+                st.toast(meldung, icon="✅")
+            return True
+        except Exception as e:
+            st.error(f"Datei konnte nicht gespeichert werden: {e}")
+            return False
+        finally:
+            if os.path.exists(f"{pfad}.tmp"):
+                os.remove(f"{pfad}.tmp")
 
     @staticmethod
     def speichere_history(df):
         try:
-            pfad = APP_CONFIG["files"]["history"]
-            df.to_csv(pfad, sep=";", index=False)
-            DataManager._sichere_extern(pfad, "Spielhistorie aktualisiert")
-            return True
+            inhalt = StringIO()
+            df.to_csv(inhalt, sep=";", index=False)
+            return DataManager._schreibe_mit_sync(
+                APP_CONFIG["files"]["history"], inhalt.getvalue(), "Spielhistorie aktualisiert"
+            )
         except Exception as e:
             st.error(f"Spielhistorie konnte nicht gespeichert werden: {e}")
             return False
 
     @staticmethod
     def ergaenze_history(songtitel, datum):
-        """Haengt gespielte Songs an die Historie an."""
+        """Nur neue (Song, Probentag)-Kombinationen ergänzen.
+
+        Rückgabe: (erfolg, tatsaechlich_neu_erfasste_songtitel).
+        """
         try:
-            neu = pd.DataFrame({"Songtitel": songtitel, "Gespielt_am": pd.to_datetime(datum)})
             bestand = DataManager.lade_history()
+            tag = pd.Timestamp(datum).normalize()
+            vorhanden = set(
+                zip(bestand["Songtitel"], bestand["Gespielt_am"].dt.normalize())
+            )
+            neue_titel = [
+                s for s in dict.fromkeys(songtitel) if (s, tag) not in vorhanden
+            ]
+            if not neue_titel:
+                return True, []
+            neu = pd.DataFrame({
+                "Songtitel": neue_titel,
+                "Gespielt_am": [tag] * len(neue_titel),
+            })
             zusammen = pd.concat([bestand, neu], ignore_index=True)
-            zusammen = zusammen.drop_duplicates(subset=["Songtitel", "Gespielt_am"])
-            return DataManager.speichere_history(zusammen)
+            if DataManager.speichere_history(zusammen):
+                return True, neue_titel
+            return False, []
         except Exception as e:
             st.error(f"Spielhistorie konnte nicht ergaenzt werden: {e}")
-            return False
+            return False, []
 
     @staticmethod
     def bereinige_history():
-        """Schreibt die entdoppelte Historie zurueck. Gibt (vorher, nachher) zurueck."""
+        """Entdoppelte Historie speichern: (vorher, nachher, erfolg)."""
         try:
             roh = pd.read_csv(APP_CONFIG["files"]["history"], sep=";", encoding="utf-8-sig")
             vorher = len(roh)
         except Exception:
             vorher = 0
         sauber = DataManager.lade_history()
-        DataManager.speichere_history(sauber)
-        return vorher, len(sauber)
+        ok = DataManager.speichere_history(sauber)
+        return vorher, len(sauber), ok
 
     @staticmethod
     def lade_naechste_probe():
@@ -199,11 +243,12 @@ class DataManager:
     @staticmethod
     def speichere_naechste_probe(songs):
         try:
-            pfad = APP_CONFIG["files"]["naechste_probe"]
-            with open(pfad, "w", encoding="utf-8") as f:
-                f.write("\n".join(songs) + ("\n" if songs else ""))
-            DataManager._sichere_extern(pfad, "Auswahl fuer die naechste Probe")
-            return True
+            inhalt = "\n".join(songs) + ("\n" if songs else "")
+            return DataManager._schreibe_mit_sync(
+                APP_CONFIG["files"]["naechste_probe"],
+                inhalt,
+                "Auswahl fuer die naechste Probe",
+            )
         except Exception as e:
             st.error(f"Auswahl konnte nicht gespeichert werden: {e}")
             return False
