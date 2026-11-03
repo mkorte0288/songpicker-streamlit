@@ -17,7 +17,7 @@ import streamlit as st
 import github_speicher
 from auswahl import auswahl_gewichte
 from config import APP_CONFIG, EDIT_ENV
-from data_manager import DataManager
+from data_manager import DataManager, SPALTEN
 from utils import (
     backup_als_zip,
     color_for_reifegrad,
@@ -503,7 +503,7 @@ if EDIT_MODE:
         )
 
         bearbeitet = st.data_editor(
-            songs(), num_rows="dynamic", use_container_width=True, hide_index=True,
+            songs()[list(SPALTEN)], num_rows="dynamic", use_container_width=True, hide_index=True,
             column_config={
                 "Songtitel": st.column_config.TextColumn("Songtitel", required=True),
                 "Zuletzt_gespielt": st.column_config.DateColumn("Zuletzt gespielt", format="DD.MM.YYYY"),
