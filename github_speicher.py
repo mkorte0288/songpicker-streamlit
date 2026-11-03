@@ -15,6 +15,7 @@ Konfiguration über Streamlit-Secrets (Menü „Settings" → „Secrets"):
 """
 
 import base64
+import hmac
 
 import requests
 import streamlit as st
@@ -41,7 +42,7 @@ def passwort_gesetzt():
 
 def pruefe_passwort(eingabe):
     soll = _conf("edit_password")
-    return bool(soll) and eingabe == soll
+    return isinstance(soll, str) and isinstance(eingabe, str) and hmac.compare_digest(eingabe, soll)
 
 
 def _kopf():
