@@ -18,6 +18,32 @@ p { margin:.5rem 0 1rem; }
 .eyebrow { color:var(--accent); font-weight:800; }
 .logo { width:5rem; height:5rem; object-fit:contain; }
 .sections a { border:1px solid var(--border); border-radius:6px; padding:.6rem .8rem; }
+.sections a { text-decoration:none; }
+.sections a[aria-current=page] { background:#ac3027; color:white; border-color:#ac3027; }
+.form-row { display:flex; align-items:end; gap:.8rem; flex-wrap:wrap; }
+.form-row label { flex:1 1 12rem; }
+.form-row button { margin-bottom:.7rem; }
+.spread { justify-content:space-between; }
+.date-line { font-size:1.15rem; font-weight:700; }
+.inline-form { display:inline-block; margin-left:.5rem; }
+details { padding:.4rem 0; }
+summary { cursor:pointer; color:var(--accent); font-weight:700; }
+progress { width:100%; height:.65rem; accent-color:var(--accent); }
+.stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(8rem,1fr)); gap:.75rem; margin:1rem 0; }
+.stats div { padding:.8rem; border:1px solid var(--border); border-radius:6px; }
+.stats strong,.stats span { display:block; }
+.stats strong { font-size:1.45rem; }
+.grade-chart { padding:0; list-style:none; }
+.grade-chart li { display:grid; grid-template-columns:2rem 1fr 2rem; gap:.5rem; align-items:center; }
+.rating-options { display:grid; grid-template-columns:repeat(auto-fit,minmax(2.8rem,1fr)); gap:.35rem; }
+.rating-options label { margin:0; }
+.rating-options input { position:absolute; opacity:0; }
+.rating-options span { display:grid; place-items:center; min-height:44px; border:1px solid var(--border); border-radius:6px; cursor:pointer; }
+.rating-options input:checked + span { background:var(--accent); color:var(--bg); border-color:var(--accent); }
+.rating-options input:focus-visible + span { outline:3px solid #fdbb6c; outline-offset:2px; }
+.account-menu { position:relative; padding:0; }
+.account-menu-content { position:absolute; right:0; top:100%; z-index:2; min-width:12rem; padding:.8rem; background:var(--panel); border:1px solid var(--border); border-radius:6px; box-shadow:0 8px 20px #0008; }
+.account-menu-content a { display:block; padding:.4rem 0; }
 label { display:block; font-weight:650; margin:.4rem 0; }
 input:not([type=checkbox]),select,textarea { display:block; max-width:100%; width:100%; min-height:44px; padding:.55rem; margin:.3rem 0 .7rem; border:1px solid var(--border); border-radius:6px; background:var(--bg); color:var(--text); font:inherit; }
 textarea { min-height:6rem; }

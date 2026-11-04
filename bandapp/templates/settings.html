@@ -20,7 +20,7 @@
 </div>
 <section class="panel"><h2>Mitglieder</h2>
 {% for member in members %}
-<div class="row"><span>{{ member.user.email }} · {{ member.get_role_display }}</span>
+<div class="row"><span><strong>{{ member.user.first_name|default:member.user.email }}</strong> · {{ member.get_role_display }}<br>{{ member.user.email }}</span>
 {% if member.role != 'admin' %}
 <form class="row" method="post" action="{% url 'change_member' band.pk member.pk %}">{% csrf_token %}
 <label>Neue Rolle
@@ -29,8 +29,8 @@
 <option value="editor" {% if member.role == 'editor' %}selected{% endif %}>Bearbeitung</option>
 </select></label>
 <button class="secondary" name="role" value="change">Rolle speichern</button>
-<button class="secondary" name="role" value="remove">Zugang entfernen</button>
 </form>
+<details><summary>Zugang entfernen</summary><p>{{ member.user.first_name|default:member.user.email }} verliert den Zugang zu {{ band.name }}.</p><form method="post" action="{% url 'change_member' band.pk member.pk %}">{% csrf_token %}<input type="hidden" name="confirm" value="remove"><button class="secondary" name="role" value="remove">Entfernung bestätigen</button></form></details>
 <details><summary>Admin-Rechte übertragen</summary>
 <p>Du gibst die Administration an dieses Mitglied ab und behältst die Bearbeitungsrechte.</p>
 <form method="post" action="{% url 'transfer_admin' band.pk member.pk %}">{% csrf_token %}

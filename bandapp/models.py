@@ -42,12 +42,22 @@ class Song(models.Model):
     artist = models.CharField("Interpret", max_length=160, blank=True)
     status = models.CharField("Status", max_length=20, choices=[
         ("set", "Im Set"), ("work", "In Arbeit"), ("candidate", "Kandidat"),
+        ("unclear", "Zu klären"), ("out", "Nicht im Repertoire"),
     ], default="set")
     duration = models.PositiveIntegerField("Spielzeit in Sekunden", default=0)
     grade = models.PositiveSmallIntegerField("Reifegrad (0–10)", null=True, blank=True)
     must_play = models.BooleanField("Must-Play", default=False)
+    favorite = models.BooleanField("Favorit", default=False)
+    tags = models.CharField("Tags", max_length=500, blank=True)
+    note = models.TextField("Notiz", max_length=1000, blank=True)
+    legacy_play_count = models.PositiveIntegerField(default=0)
     comment = models.TextField("Kommentar", max_length=1000, blank=True)
     archived = models.BooleanField(default=False)
+
+    @property
+    def duration_label(self):
+        minutes, seconds = divmod(self.duration, 60)
+        return f"{minutes}:{seconds:02d}"
 
     class Meta:
         ordering = ["title"]
@@ -63,9 +73,14 @@ class Played(models.Model):
 
 
 class Plan(models.Model):
-    band = models.OneToOneField(Band, on_delete=models.CASCADE)
+    band = models.ForeignKey(Band, on_delete=models.CASCADE)
     day = models.DateField()
     songs = models.ManyToManyField(Song)
+    completed = models.BooleanField(default=False)
+
+    class Meta:
+        ordering = ["day"]
+        constraints = [models.UniqueConstraint(fields=["band", "day"], name="unique_band_plan_day")]
 
 
 class RequestLimit(models.Model):
