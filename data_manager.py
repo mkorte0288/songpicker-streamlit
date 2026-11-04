@@ -1,5 +1,8 @@
 import os
 from io import StringIO
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from threading import RLock
 
 import pandas as pd
 import streamlit as st  # war vorher nicht importiert, obwohl st.error() benutzt wurde
@@ -7,6 +10,8 @@ import streamlit as st  # war vorher nicht importiert, obwohl st.error() benutzt
 from config import APP_CONFIG, EDIT_ENV
 import github_speicher
 from utils import backup_dateien, parse_datum, spielzeit_in_sekunden
+
+_SCHREIBSPERRE = RLock()
 
 SPALTEN = {
     "Songtitel": "",
@@ -27,7 +32,7 @@ class DataManager:
     """Alle Lese- und Schreibzugriffe auf die CSV-Dateien."""
 
     @staticmethod
-    def lade_songliste():
+    def lade_songliste(*, strikt=False):
         pfad = APP_CONFIG["files"]["songs"]
         try:
             if not os.path.exists(pfad):
@@ -70,6 +75,8 @@ class DataManager:
                 df[text] = df[text].fillna("").astype(str).replace("nan", "")
             return df
         except Exception as e:
+            if strikt:
+                raise
             st.error(f"Songliste konnte nicht gelesen werden: {e}")
             return pd.DataFrame(columns=list(SPALTEN))
 
@@ -119,22 +126,26 @@ class DataManager:
             return False
 
     @staticmethod
-    def lade_history():
+    def lade_history(*, strikt=False):
         pfad = APP_CONFIG["files"]["history"]
         try:
             if not os.path.exists(pfad):
-                return pd.DataFrame(columns=["Songtitel", "Gespielt_am"])
+                return pd.DataFrame({"Songtitel": [], "Gespielt_am": pd.Series(dtype="datetime64[ns]")})
             df = pd.read_csv(pfad, sep=";", encoding="utf-8-sig")
             df.columns = df.columns.str.strip()
             df["Gespielt_am"] = parse_datum(df["Gespielt_am"])
+            if strikt and df["Gespielt_am"].isna().any():
+                raise ValueError("Spielhistorie enthält ungültige Datumswerte.")
             df = df.dropna(subset=["Gespielt_am"])
             # Ein Song kann an einem Abend nur einmal gespielt worden sein.
             # In der gewachsenen Datei stand "Run" 17-mal fuer denselben
             # Probentag — offenbar wurde beim Eintragen mehrfach angehaengt.
             return df.drop_duplicates(subset=["Songtitel", "Gespielt_am"])
         except Exception as e:
+            if strikt:
+                raise
             st.error(f"Spielhistorie konnte nicht gelesen werden: {e}")
-            return pd.DataFrame(columns=["Songtitel", "Gespielt_am"])
+            return pd.DataFrame({"Songtitel": [], "Gespielt_am": pd.Series(dtype="datetime64[ns]")})
 
     @staticmethod
     def _schreibe_mit_sync(pfad, inhalt, nachricht):
@@ -143,6 +154,11 @@ class DataManager:
         Lokal ohne GitHub ist nur im ausdrücklich aktivierten lokalen Edit-Modus erlaubt.
         Auf der Community Cloud wäre eine rein lokale Erfolgsmeldung irreführend.
         """
+        with _SCHREIBSPERRE:
+            return DataManager._schreibe_datei(pfad, inhalt, nachricht)
+
+    @staticmethod
+    def _schreibe_datei(pfad, inhalt, nachricht):
         if not github_speicher.verfuegbar() and not EDIT_ENV:
             st.error("Speichern nicht möglich: GitHub-Synchronisierung ist nicht konfiguriert.")
             return False
@@ -150,19 +166,17 @@ class DataManager:
         try:
             vorher = None
             if existiert:
-                with open(pfad, encoding="utf-8") as datei:
-                    vorher = datei.read()
+                vorher = Path(pfad).read_bytes()
             tmp = f"{pfad}.tmp"
             with open(tmp, "w", encoding="utf-8", newline="") as datei:
                 datei.write(inhalt)
             os.replace(tmp, pfad)
             if github_speicher.verfuegbar():
-                ok, meldung = github_speicher.speichere(pfad, inhalt, nachricht)
+                ok, meldung = github_speicher.speichere(pfad, inhalt, nachricht, vorher=vorher)
                 if not ok:
                     try:
                         if existiert:
-                            with open(tmp, "w", encoding="utf-8", newline="") as datei:
-                                datei.write(vorher)
+                            Path(tmp).write_bytes(vorher)
                             os.replace(tmp, pfad)
                         else:
                             os.remove(pfad)
@@ -199,26 +213,87 @@ class DataManager:
         """
         try:
             bestand = DataManager.lade_history()
-            tag = pd.Timestamp(datum).normalize()
-            vorhanden = set(
-                zip(bestand["Songtitel"], bestand["Gespielt_am"].dt.normalize())
-            )
-            neue_titel = [
-                s for s in dict.fromkeys(songtitel) if (s, tag) not in vorhanden
-            ]
+            zusammen, neue_titel = DataManager._neue_history(bestand, songtitel, datum)
             if not neue_titel:
                 return True, []
-            neu = pd.DataFrame({
-                "Songtitel": neue_titel,
-                "Gespielt_am": [tag] * len(neue_titel),
-            })
-            zusammen = pd.concat([bestand, neu], ignore_index=True)
             if DataManager.speichere_history(zusammen):
                 return True, neue_titel
             return False, []
         except Exception as e:
             st.error(f"Spielhistorie konnte nicht ergaenzt werden: {e}")
             return False, []
+
+    @staticmethod
+    def _neue_history(bestand, songtitel, datum):
+        tag = pd.Timestamp(datum).normalize()
+        vorhanden = set(zip(bestand["Songtitel"], bestand["Gespielt_am"].dt.normalize()))
+        neue_titel = [s for s in dict.fromkeys(songtitel) if (s, tag) not in vorhanden]
+        if not neue_titel:
+            return bestand, []
+        neu = pd.DataFrame({"Songtitel": neue_titel, "Gespielt_am": [tag] * len(neue_titel)})
+        return pd.concat([bestand, neu], ignore_index=True), neue_titel
+
+    @staticmethod
+    def erfasse_probe(songtitel, datum):
+        """Historie und Zähler gemeinsam an GitHub übertragen."""
+        with _SCHREIBSPERRE:
+            try:
+                cloud = github_speicher.verfuegbar()
+                if not cloud and not EDIT_ENV:
+                    st.error("Speichern nicht möglich: GitHub-Synchronisierung fehlt.")
+                    return False, []
+                hist_pfad = Path(APP_CONFIG["files"]["history"])
+                song_pfad = Path(APP_CONFIG["files"]["songs"])
+                bestand, neu = DataManager._neue_history(
+                    DataManager.lade_history(strikt=True), songtitel, datum
+                )
+                if not neu:
+                    return True, []
+                if not song_pfad.is_file():
+                    raise FileNotFoundError("Songliste fehlt.")
+                songs = DataManager.lade_songliste(strikt=True)
+                songs.loc[songs["Songtitel"].isin(neu), "Anzahl_gespielt"] += 1
+                dateien = {
+                    str(hist_pfad): (
+                        hist_pfad.read_bytes() if hist_pfad.exists() else None,
+                        bestand.to_csv(sep=";", index=False).encode("utf-8"),
+                    ),
+                    str(song_pfad): (
+                        song_pfad.read_bytes(),
+                        songs[list(SPALTEN)].to_csv(sep=";", index=False).encode("utf-8"),
+                    ),
+                }
+                with TemporaryDirectory(dir=hist_pfad.parent) as ordner:
+                    bereit = {}
+                    for nr, (pfad, (_, inhalt)) in enumerate(dateien.items()):
+                        tmp = Path(ordner) / str(nr)
+                        tmp.write_bytes(inhalt)
+                        bereit[pfad] = tmp
+                    if cloud:
+                        ok, meldung = github_speicher.speichere_probe(dateien, "Probe erfasst")
+                        if not ok:
+                            st.error(meldung)
+                            return False, []
+                    ersetzt = []
+                    try:
+                        for pfad, tmp in bereit.items():
+                            os.replace(tmp, pfad)
+                            ersetzt.append(pfad)
+                    except OSError:
+                        for pfad in ersetzt:
+                            vorher, _ = dateien[pfad]
+                            if vorher is None:
+                                Path(pfad).unlink()
+                            else:
+                                Path(pfad).write_bytes(vorher)
+                        if cloud:
+                            st.error("Probe in GitHub gespeichert. Lokale Daten konnten nicht aktualisiert werden. App neu starten.")
+                            return False, []
+                        raise
+                return True, neu
+            except Exception as e:
+                st.error(f"Probe konnte nicht erfasst werden: {e}")
+                return False, []
 
     @staticmethod
     def bereinige_history():

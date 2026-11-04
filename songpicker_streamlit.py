@@ -66,15 +66,19 @@ st.markdown(
   .ffc-eyebrow {{ color: var(--red-bright); font-size: 12px; font-weight: 900;
                   letter-spacing: .18em; text-transform: uppercase; margin-bottom: 6px; }}
   .stButton > button {{
-      background: var(--red); color: #fff; border: 1px solid var(--red);
       border-radius: 0; min-height: 46px; font-weight: 900; font-size: 13px;
       letter-spacing: .08em; text-transform: uppercase; transition: transform .15s ease; }}
-  .stButton > button:hover {{ background: #e65343; border-color: #e65343;
-                              color: #fff; transform: translateY(-2px); }}
+  .stButton > button[data-testid="stBaseButton-primary"]:not(:disabled) {{
+      background: #b52c22; color: #fff; border-color: #b52c22; }}
+  .stButton > button[data-testid="stBaseButton-primary"]:not(:disabled):hover {{
+      background: #9f251e; border-color: #9f251e; }}
   .stTabs [data-baseweb="tab-list"] {{ gap: 4px; border-bottom: 1px solid var(--line); }}
   .stTabs [data-baseweb="tab"] {{ background: transparent; border-radius: 0;
       font-weight: 800; font-size: 13px; letter-spacing: .06em; text-transform: uppercase; }}
-  .stTabs [aria-selected="true"] {{ border-bottom: 2px solid var(--red-bright); }}
+  .stTabs [data-baseweb="tab-highlight"] {{ display: none; }}
+  .stTabs [role="tab"][aria-selected="true"] {{
+      color: var(--paper); background: var(--ink-2);
+      box-shadow: inset 0 -3px var(--red-bright); }}
   div[data-testid="stMetric"] {{ background: var(--ink-2); border: 1px solid var(--line);
       padding: 16px 18px; }}
   div[data-testid="stMetricValue"] {{ font-family: "Anton", sans-serif; font-weight: 400; }}
@@ -88,7 +92,8 @@ st.markdown(
   .ffc-banner {{ border-left: 3px solid var(--red-bright); background: rgba(255,101,80,.08);
                  padding: 12px 16px; margin-bottom: 18px; font-size: 14px; }}
   @media (max-width: 700px) {{
-    .stTabs [data-baseweb="tab-list"] {{ flex-wrap: wrap; }}
+    .stTabs [data-baseweb="tab-list"] {{ flex-wrap: wrap; gap: 4px 8px; }}
+    .stTabs [role="tab"] {{ min-height: 44px; padding: 6px 8px; }}
     .stButton > button {{ width: 100%; }}
   }}
 </style>
@@ -130,13 +135,6 @@ with st.sidebar:
     st.markdown("### Zugang")
     if st.session_state.darf_bearbeiten:
         st.success("Bearbeiten aktiv")
-        if github_speicher.verfuegbar():
-            st.caption("Änderungen werden ins GitHub-Repository committet.")
-        else:
-            st.warning(
-                "Kein GitHub-Token hinterlegt. Änderungen gelten nur für diese "
-                "Sitzung und sind beim nächsten Neustart weg."
-            )
         if not EDIT_ENV and st.button("Abmelden", use_container_width=True):
             st.session_state.darf_bearbeiten = False
             st.rerun()
@@ -154,15 +152,24 @@ with st.sidebar:
 
 EDIT_MODE = st.session_state.darf_bearbeiten
 
-if not EDIT_MODE:
+GITHUB_SYNC = EDIT_MODE and github_speicher.verfuegbar()
+KANN_SPEICHERN = EDIT_MODE and (GITHUB_SYNC or EDIT_ENV)
+SPEICHERORT = "in GitHub" if GITHUB_SYNC else "lokal"
+
+if EDIT_MODE:
+    if KANN_SPEICHERN:
+        st.info(f"Bearbeiten aktiv · Änderungen werden {SPEICHERORT} gespeichert.")
+    else:
+        st.warning("Bearbeiten aktiv · Speichern derzeit nicht möglich. GitHub-Synchronisierung fehlt.")
+else:
     st.markdown(
         '<div class="ffc-banner"><b>Nur-Lesen.</b> Das ist die Ansicht für die Band: '
         "was für die nächste Probe ansteht, wie der Stand der Songs ist und was "
-        "wann gespielt wurde. Bearbeitet wird an einer Stelle.</div>",
+        "wann gespielt wurde.</div>",
         unsafe_allow_html=True,
     )
 
-namen = ["Nächste Probe", "Analyse", "History"]
+namen = ["Nächste Probe", "Analyse", "Historie"]
 if EDIT_MODE:
     namen += ["Auswahl", "Nachbereitung", "Songliste"]
 tabs = st.tabs(namen)
@@ -308,7 +315,7 @@ with tabs[1]:
                     "derselbe Song mehrfach für denselben Probentag. Die App rechnet bereits "
                     "ohne sie, die Datei ist aber noch unsauber."
                 )
-                if st.button("Spielhistorie bereinigen", use_container_width=True):
+                if st.button("Spielhistorie bereinigen", use_container_width=True, disabled=not KANN_SPEICHERN):
                     vorher, nachher, ok = DataManager.bereinige_history()
                     if ok:
                         frisch()
@@ -359,7 +366,7 @@ if EDIT_MODE:
                     lambda x: any(t in [i.strip() for i in str(x).split(",")] for t in gewaehlte_tags))]
 
             s1, s2 = st.columns(2)
-            if len(basis) >= 3:
+            if len(basis) > 3:
                 anzahl = s1.slider("Anzahl Songs", 3, min(15, len(basis)), min(5, len(basis)))
             else:
                 anzahl = len(basis)
@@ -424,36 +431,38 @@ if EDIT_MODE:
                             st.session_state.auswahl.append(zusatz)
                         st.rerun()
 
-                if st.button("Auswahl für die nächste Probe speichern", use_container_width=True):
+                if st.button(
+                    "Auswahl für die nächste Probe speichern", type="primary",
+                    use_container_width=True, disabled=not KANN_SPEICHERN,
+                ):
                     if DataManager.speichere_naechste_probe(auswahl):
-                        st.success("Auswahl dauerhaft gespeichert.")
+                        st.success(f"Auswahl {SPEICHERORT} gespeichert.")
 
                 st.markdown("#### Probe nachbereiten")
                 st.caption("Nur Songs als gespielt markieren, die ihr tatsächlich geprobt habt.")
+                datums_text = datum.strftime("%d.%m.%Y")
+                st.caption(f"Probendatum: {datums_text}")
                 auswahl_key = hashlib.sha1("\n".join(auswahl).encode("utf-8")).hexdigest()[:12]
-                tatsaechlich = st.multiselect(
-                    "Tatsächlich gespielt", auswahl, default=auswahl,
-                    key=f"tatsaechlich_{auswahl_key}",
+                gespielt_key = f"tatsaechlich_{datum.isoformat()}_{auswahl_key}"
+                if st.button("Alle übernehmen", key=f"alle_{gespielt_key}"):
+                    st.session_state[gespielt_key] = list(auswahl)
+                tatsaechlich = st.multiselect("Tatsächlich gespielt", auswahl, key=gespielt_key)
+                anzahl_gespielt = len(tatsaechlich)
+                label = (
+                    f"{anzahl_gespielt} {'Song' if anzahl_gespielt == 1 else 'Songs'} "
+                    f"für den {datums_text} erfassen"
+                    if anzahl_gespielt else "Gespielte Songs erfassen"
                 )
-                if st.button("Als gespielt eintragen", use_container_width=True,
-                             disabled=not tatsaechlich):
-                    ok, neu = DataManager.ergaenze_history(tatsaechlich, datum)
-                    if ok:
-                        if neu:
-                            aktuell = DataManager.lade_songliste()
-                            maske = aktuell["Songtitel"].isin(neu)
-                            aktuell.loc[maske, "Anzahl_gespielt"] += 1
-                            if DataManager.speichere_songliste(aktuell):
-                                frisch()
-                                st.success(f"{len(neu)} Songs in der Historie erfasst.")
-                            else:
-                                frisch()
-                                st.warning(
-                                    "Historie gespeichert, aber Songzähler konnte nicht "
-                                    "aktualisiert werden. Bitte Datenqualität prüfen."
-                                )
-                        else:
-                            st.info("Diese Songs waren an diesem Probentag bereits eingetragen.")
+                if st.button(
+                    label, key="probe_erfassen", type="primary", use_container_width=True,
+                    disabled=not tatsaechlich or not KANN_SPEICHERN,
+                ):
+                    ok, neu = DataManager.erfasse_probe(tatsaechlich, datum)
+                    if ok and neu:
+                        frisch()
+                        st.success(f"Probe vom {datums_text} {SPEICHERORT} gespeichert. Neu erfasste Songs: {len(neu)}.")
+                    elif ok:
+                        st.info("Diese Songs waren an diesem Probentag bereits eingetragen.")
 
     # ------------------------------------------------------------ Nachbereitung
     with tabs[4]:
@@ -472,16 +481,20 @@ if EDIT_MODE:
             for nr, song in enumerate(gespielt):
                 z = df[df["Songtitel"] == song]
                 roh = z.iloc[0]["Reifegrad"] if not z.empty else pd.NA
-                akt = 5 if pd.isna(roh) else int(roh)
+                akt = None if pd.isna(roh) else int(roh)
                 kom = str(z.iloc[0]["Kommentar"]) if not z.empty else ""
                 with st.expander(song, expanded=False):
                     c1, c2 = st.columns([1, 2])
                     neue[song] = (
-                        c1.slider("Reifegrad", 0, 10, akt, key=f"r_{termin}_{nr}"),
+                        c1.select_slider(
+                            "Reifegrad", options=[None, *range(11)], value=akt,
+                            format_func=lambda wert: "Unbewertet" if wert is None else str(wert),
+                            key=f"r_{termin}_{nr}",
+                        ),
                         c2.text_input("Kommentar", value=kom, key=f"k_{termin}_{nr}"),
                     )
 
-            if neue and st.button("Änderungen speichern", use_container_width=True):
+            if neue and st.button("Änderungen speichern", type="primary", use_container_width=True, disabled=not KANN_SPEICHERN):
                 aktuell = DataManager.lade_songliste()
                 for song, (grad, kommentar) in neue.items():
                     idx = aktuell[aktuell["Songtitel"] == song].index
@@ -489,7 +502,7 @@ if EDIT_MODE:
                     aktuell.loc[idx, "Kommentar"] = kommentar
                 if DataManager.speichere_songliste(aktuell):
                     frisch()
-                    st.success("Gespeichert.")
+                    st.toast(f"Änderungen {SPEICHERORT} gespeichert.")
                     st.rerun()
 
     # ------------------------------------------------------------ Songliste
@@ -519,9 +532,9 @@ if EDIT_MODE:
             },
             key="editor",
         )
-        if st.button("Songliste speichern", use_container_width=True):
+        if st.button("Songliste speichern", type="primary", use_container_width=True, disabled=not KANN_SPEICHERN):
             sauber = bearbeitet[bearbeitet["Songtitel"].astype(str).str.strip() != ""]
             if DataManager.speichere_songliste(sauber):
                 frisch()
-                st.success("Songliste dauerhaft gespeichert.")
+                st.toast(f"Songliste {SPEICHERORT} gespeichert.")
                 st.rerun()
