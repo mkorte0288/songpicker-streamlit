@@ -41,3 +41,13 @@ jobs:
       - run: python manage.py collectstatic --noinput
       - run: python manage.py makemigrations --check --dry-run
       - run: python manage.py test bandapp
+      - name: Verify restore into a separate database
+        shell: bash
+        run: |
+          docker exec ${{ job.services.postgres.id }} pg_isready -U songpicker -d songpicker
+          python manage.py migrate --noinput
+          python manage.py shell -c 'from bandapp.models import Band, Song, Played; from datetime import date; b=Band.objects.create(name="Synthetic backup check", logo=b"test-logo"); s=Song.objects.create(band=b,title="Test song"); Played.objects.create(song=s,day=date(2026,1,1))'
+          docker exec ${{ job.services.postgres.id }} pg_dump -U songpicker -Fc songpicker > "$RUNNER_TEMP/songpicker-test.dump"
+          docker exec ${{ job.services.postgres.id }} createdb -U songpicker songpicker_restore
+          docker exec -i ${{ job.services.postgres.id }} pg_restore -U songpicker --exit-on-error -d songpicker_restore < "$RUNNER_TEMP/songpicker-test.dump"
+          DATABASE_URL=postgresql://songpicker:local-ci@localhost:5432/songpicker_restore python manage.py shell -c 'from bandapp.models import Band, Played; assert bytes(Band.objects.get(name="Synthetic backup check").logo)==b"test-logo"; assert Played.objects.get().song.title=="Test song"'
