@@ -19,10 +19,11 @@ class EmailLoginForm(AuthenticationForm):
 
 class SignupForm(UserCreationForm):
     email = forms.EmailField(label="E-Mail", max_length=150)
+    first_name = forms.CharField(label="Dein Name", max_length=150)
 
     class Meta:
         model = User
-        fields = ("email",)
+        fields = ("email", "first_name")
 
     def clean_email(self):
         email = self.cleaned_data["email"].lower()
@@ -67,11 +68,19 @@ class BandForm(forms.ModelForm):
             raise forms.ValidationError("Bitte ein gültiges PNG- oder JPEG-Bild hochladen.")
 
 
+class AccountNameForm(forms.ModelForm):
+    first_name = forms.CharField(label="Dein Name", max_length=150)
+
+    class Meta:
+        model = User
+        fields = ("first_name",)
+
+
 class InviteForm(forms.Form):
     email = forms.EmailField(label="E-Mail")
     role = forms.ChoiceField(label="Rolle", choices=[
-        (Membership.Role.EDITOR, Membership.Role.EDITOR.label),
         (Membership.Role.MEMBER, Membership.Role.MEMBER.label),
+        (Membership.Role.EDITOR, Membership.Role.EDITOR.label),
     ])
 
 

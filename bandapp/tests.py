@@ -1,4 +1,5 @@
 import re
+from datetime import timedelta
 from io import BytesIO
 from urllib.parse import urlsplit
 
@@ -8,8 +9,9 @@ from django.core import mail
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import Client, TestCase, override_settings
 from django.urls import reverse
+from django.utils import timezone
 
-from .models import Band, Membership, Played, Song
+from .models import Band, Membership, Plan, Played, Song
 
 
 @override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend",
@@ -22,7 +24,8 @@ class AccountAndBandTests(TestCase):
 
     def account(self, client, email, next_path=""):
         response = client.post(reverse("signup") + (f"?next={next_path}" if next_path else ""), {
-            "email": email, "password1": self.password, "password2": self.password,
+            "email": email, "first_name": email.split("@")[0],
+            "password1": self.password, "password2": self.password,
         })
         self.assertRedirects(response, reverse("login"))
         confirmation = self.link()
@@ -66,7 +69,7 @@ class AccountAndBandTests(TestCase):
         self.assertEqual(outsider.post(invitation).status_code, 404)
 
         member_id = Membership.objects.get(band=band, user__email="member@example.com").pk
-        self.client.post(reverse("change_member", args=[band.pk, member_id]), {"role": "remove"})
+        self.client.post(reverse("change_member", args=[band.pk, member_id]), {"role": "remove", "confirm": "remove"})
         self.assertEqual(member.get(band_page).status_code, 404)
 
     def test_reset_and_password_login(self):
@@ -102,18 +105,50 @@ class AccountAndBandTests(TestCase):
         self.assertContains(invalid, "Gib die Spielzeit als Minuten:Sekunden ein")
         song.refresh_from_db()
         self.assertEqual(song.duration, 280)
-        day = "2026-11-04"
+        day = (timezone.localdate() + timedelta(days=1)).isoformat()
         suggest = self.client.post(reverse("suggest", args=[band.pk]), {"day": day, "count": 5}, follow=True)
-        self.assertContains(suggest, "Für die Probe geplante Songs")
+        self.assertContains(suggest, "Vorschlag für")
+        self.assertContains(suggest, "Walk")
         plan = self.client.post(reverse("save_plan", args=[band.pk]), {"day": day, "songs": [song.pk]}, follow=True)
         self.assertContains(plan, "Probe geplant.")
+        record_page = self.client.get(reverse("band", args=[band.pk]) + f"?tab=erfassen&day={day}")
+        self.assertContains(record_page, f'value="{song.pk}" checked')
         record = reverse("record", args=[band.pk])
         for _ in range(2):
             self.assertEqual(self.client.post(record, {"day": day, "songs": [song.pk]}).status_code, 302)
         self.assertEqual(Played.objects.count(), 1)
+        self.assertTrue(Plan.objects.get(band=band, day=day).completed)
+        self.assertContains(self.client.get(reverse("band", args=[band.pk])), "Es ist keine kommende Probe geplant.")
+        rate = self.client.post(reverse("rate_rehearsal", args=[band.pk]), {
+            "day": day, f"grade_{song.pk}": "4",
+        }, follow=True)
+        self.assertContains(rate, "Reifegrade gespeichert.")
+        song.refresh_from_db()
+        self.assertEqual(song.grade, 4)
         foreign = Song.objects.create(band=Band.objects.create(name="Band B"), title="Fremd")
         self.assertEqual(self.client.post(record, {"day": day, "songs": [foreign.pk]}).status_code, 404)
         self.assertEqual(Played.objects.count(), 1)
+
+    def test_separate_future_plans_import_and_restore(self):
+        self.account(self.client, "owner@example.com")
+        self.client.post(reverse("create_band"), {"name": "Band A"})
+        band = Band.objects.get(name="Band A")
+        imported = self.client.post(reverse("import_songs", args=[band.pk]), {
+            "titles": "Everlong\nWalk\nEverlong\n",
+        }, follow=True)
+        self.assertContains(imported, "2 Songs hinzugefügt")
+        self.assertEqual(Song.objects.filter(band=band).count(), 2)
+        first = Song.objects.get(band=band, title="Everlong")
+        day1 = (timezone.localdate() + timedelta(days=1)).isoformat()
+        day2 = (timezone.localdate() + timedelta(days=2)).isoformat()
+        for day in (day1, day2):
+            self.client.post(reverse("save_plan", args=[band.pk]), {"day": day, "songs": [first.pk]})
+        self.assertEqual(Plan.objects.filter(band=band).count(), 2)
+        self.assertContains(self.client.get(reverse("band", args=[band.pk])), day1[-2:] + ".")
+        self.client.post(reverse("archive_song", args=[band.pk, first.pk]))
+        self.assertTrue(Song.objects.get(pk=first.pk).archived)
+        self.client.post(reverse("restore_song", args=[band.pk, first.pk]))
+        self.assertFalse(Song.objects.get(pk=first.pk).archived)
 
     def test_admin_transfer_and_deletion_keep_band_usable(self):
         self.account(self.client, "owner@example.com")
