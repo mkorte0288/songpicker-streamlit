@@ -3,6 +3,7 @@ import tempfile
 import unittest
 import zipfile
 from io import BytesIO
+from pathlib import Path
 from unittest.mock import patch
 
 from config import APP_CONFIG
@@ -79,6 +80,27 @@ class TestDataManager(unittest.TestCase):
             f.write("Songtitel;Gespielt_am\nEverlong;2026-11-04\nEverlong;2026-11-04\n")
         with patch.object(DataManager, "speichere_history", return_value=False):
             self.assertEqual(DataManager.bereinige_history(), (2, 1, False))
+
+    def test_probe_conflict_keeps_both_files_and_retry_counts_once(self):
+        songs = Path(self.files["songs"])
+        history = Path(self.files["history"])
+        songs.write_text("Songtitel;Anzahl_gespielt\nEverlong;7\n", encoding="utf-8")
+        history.write_text("Songtitel;Gespielt_am\nEverlong;2026-11-01\n", encoding="utf-8")
+        vorher = (songs.read_bytes(), history.read_bytes())
+
+        with patch("data_manager.github_speicher.verfuegbar", return_value=True), \
+             patch("data_manager.github_speicher.speichere_probe",
+                   side_effect=[(False, "Konflikt"), (True, "OK")]) as commit, \
+             patch("data_manager.st.error"):
+            self.assertEqual(DataManager.erfasse_probe(["Everlong"], "2026-11-04"), (False, []))
+            self.assertEqual((songs.read_bytes(), history.read_bytes()), vorher)
+            self.assertEqual(DataManager.erfasse_probe(["Everlong"], "2026-11-04"), (True, ["Everlong"]))
+            self.assertEqual(DataManager.erfasse_probe(["Everlong"], "2026-11-04"), (True, []))
+            self.assertEqual(commit.call_count, 2)
+            self.assertEqual(set(commit.call_args.args[0]), {str(songs), str(history)})
+
+        self.assertEqual(DataManager.lade_songliste().iloc[0]["Anzahl_gespielt"], 8)
+        self.assertEqual(len(DataManager.lade_history()), 2)
 
     def test_downloadable_backup_contains_all_three_files(self):
         for key in ("songs", "history", "naechste_probe"):

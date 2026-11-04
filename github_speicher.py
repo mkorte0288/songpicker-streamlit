@@ -15,6 +15,7 @@ Konfiguration über Streamlit-Secrets (Menü „Settings" → „Secrets"):
 """
 
 import base64
+import hashlib
 import hmac
 
 import requests
@@ -42,7 +43,11 @@ def passwort_gesetzt():
 
 def pruefe_passwort(eingabe):
     soll = _conf("edit_password")
-    return isinstance(soll, str) and isinstance(eingabe, str) and hmac.compare_digest(eingabe, soll)
+    return (
+        isinstance(soll, str)
+        and isinstance(eingabe, str)
+        and hmac.compare_digest(eingabe.encode("utf-8"), soll.encode("utf-8"))
+    )
 
 
 def _kopf():
@@ -73,7 +78,7 @@ def hole_sha(pfad):
         return None
 
 
-def speichere(pfad, inhalt, nachricht):
+def speichere(pfad, inhalt, nachricht, *, vorher):
     """Committet den Inhalt. Gibt (True, Meldung) oder (False, Fehler) zurueck.
 
     Die SHA wird unmittelbar vor dem Schreiben geholt. Aendert jemand die
@@ -89,6 +94,12 @@ def speichere(pfad, inhalt, nachricht):
         "branch": _conf("github_branch", "main"),
     }
     sha = hole_sha(pfad)
+    erwartet = None
+    if vorher is not None:
+        blob = f"blob {len(vorher)}\0".encode("ascii") + vorher
+        erwartet = hashlib.sha1(blob).hexdigest()
+    if sha != erwartet:
+        return False, "GitHub-Datenstand stimmt nicht mit der lokalen Datei überein."
     if sha:
         daten["sha"] = sha
 
@@ -104,3 +115,66 @@ def speichere(pfad, inhalt, nachricht):
     if r.status_code in (401, 403):
         return False, "Token fehlt, ist abgelaufen oder hat keine Schreibrechte auf Contents."
     return False, f"GitHub antwortete mit {r.status_code}: {r.text[:200]}"
+
+
+def speichere_probe(dateien, nachricht):
+    """Historie und Songzähler gemeinsam auf dem konfigurierten Branch speichern."""
+    if not verfuegbar():
+        return False, "GitHub-Synchronisierung ist nicht konfiguriert."
+
+    repo = _conf("github_repo")
+    branch = _conf("github_branch", "main")
+    owner, name = repo.split("/", 1)
+    try:
+        antwort = requests.post(
+            f"{API}/graphql",
+            headers=_kopf(),
+            timeout=TIMEOUT,
+            json={
+                "query": """
+                    query($owner: String!, $repo: String!, $ref: String!) {
+                      repository(owner: $owner, name: $repo) {
+                        ref(qualifiedName: $ref) { target { oid } }
+                      }
+                    }
+                """,
+                "variables": {"owner": owner, "repo": name, "ref": f"refs/heads/{branch}"},
+            },
+        )
+        antwort.raise_for_status()
+        head = antwort.json()["data"]["repository"]["ref"]["target"]["oid"]
+        for pfad, (vorher, _) in dateien.items():
+            antwort = requests.get(_url(pfad), headers=_kopf(), params={"ref": head}, timeout=TIMEOUT)
+            if antwort.status_code == 404 and vorher is None:
+                continue
+            antwort.raise_for_status()
+            if vorher != base64.b64decode(antwort.json()["content"]):
+                return False, "GitHub enthält einen neueren Datenstand. App neu laden und erneut versuchen."
+
+        antwort = requests.post(
+            f"{API}/graphql",
+            headers=_kopf(),
+            timeout=TIMEOUT,
+            json={
+                "query": """
+                    mutation($input: CreateCommitOnBranchInput!) {
+                      createCommitOnBranch(input: $input) { commit { oid } }
+                    }
+                """,
+                "variables": {"input": {
+                    "branch": {"repositoryNameWithOwner": repo, "branchName": branch},
+                    "expectedHeadOid": head,
+                    "message": {"headline": nachricht},
+                    "fileChanges": {"additions": [
+                        {"path": pfad, "contents": base64.b64encode(inhalt).decode("ascii")}
+                        for pfad, (_, inhalt) in dateien.items()
+                    ]},
+                }},
+            },
+        )
+        antwort.raise_for_status()
+        if antwort.json().get("data", {}).get("createCommitOnBranch", {}).get("commit"):
+            return True, "Probe im Repository gespeichert."
+    except (requests.RequestException, KeyError, TypeError, ValueError, AttributeError):
+        pass
+    return False, "GitHub-Speicherung nicht bestätigt. Bitte den Branchstand vor einem erneuten Versuch prüfen."

@@ -21,10 +21,15 @@ github_branch ist optional (Standard: main).
 Bei Fehlern während des GitHub-Commits wird ein Fehler angezeigt und die
 zuvor vorhandene lokale Datei wiederhergestellt. Backups können im
 Bearbeitungsmodus unter „Songliste“ als ZIP heruntergeladen werden.
+Die Probenerfassung schreibt Historie und Songzähler in einem gemeinsamen
+GitHub-Commit. Änderungen am Branch während des Speicherns werden abgelehnt.
 
 Achtung: Der GitHub-basierte Speicher ist nur für die jetzige einzelne
 Band gedacht und weder für viele parallele Nutzer noch für Mandanten
-geeignet. Die CSVs liegen derzeit in einem öffentlichen Repository.
+geeignet. Die CSVs liegen in einem öffentlichen Repository. Das App-Passwort schützt
+die Bearbeitung. Songdaten, Historie, Kommentare und Notizen sind öffentlich
+lesbar. Keine vertraulichen Informationen oder personenbezogenen Angaben
+in Kommentare und Notizen eintragen.
 
 ## Probenablauf
 

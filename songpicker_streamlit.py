@@ -359,7 +359,7 @@ if EDIT_MODE:
                     lambda x: any(t in [i.strip() for i in str(x).split(",")] for t in gewaehlte_tags))]
 
             s1, s2 = st.columns(2)
-            if len(basis) >= 3:
+            if len(basis) > 3:
                 anzahl = s1.slider("Anzahl Songs", 3, min(15, len(basis)), min(5, len(basis)))
             else:
                 anzahl = len(basis)
@@ -437,23 +437,12 @@ if EDIT_MODE:
                 )
                 if st.button("Als gespielt eintragen", use_container_width=True,
                              disabled=not tatsaechlich):
-                    ok, neu = DataManager.ergaenze_history(tatsaechlich, datum)
-                    if ok:
-                        if neu:
-                            aktuell = DataManager.lade_songliste()
-                            maske = aktuell["Songtitel"].isin(neu)
-                            aktuell.loc[maske, "Anzahl_gespielt"] += 1
-                            if DataManager.speichere_songliste(aktuell):
-                                frisch()
-                                st.success(f"{len(neu)} Songs in der Historie erfasst.")
-                            else:
-                                frisch()
-                                st.warning(
-                                    "Historie gespeichert, aber Songzähler konnte nicht "
-                                    "aktualisiert werden. Bitte Datenqualität prüfen."
-                                )
-                        else:
-                            st.info("Diese Songs waren an diesem Probentag bereits eingetragen.")
+                    ok, neu = DataManager.erfasse_probe(tatsaechlich, datum)
+                    if ok and neu:
+                        frisch()
+                        st.success(f"{len(neu)} Songs in der Historie erfasst.")
+                    elif ok:
+                        st.info("Diese Songs waren an diesem Probentag bereits eingetragen.")
 
     # ------------------------------------------------------------ Nachbereitung
     with tabs[4]:
@@ -472,12 +461,16 @@ if EDIT_MODE:
             for nr, song in enumerate(gespielt):
                 z = df[df["Songtitel"] == song]
                 roh = z.iloc[0]["Reifegrad"] if not z.empty else pd.NA
-                akt = 5 if pd.isna(roh) else int(roh)
+                akt = None if pd.isna(roh) else int(roh)
                 kom = str(z.iloc[0]["Kommentar"]) if not z.empty else ""
                 with st.expander(song, expanded=False):
                     c1, c2 = st.columns([1, 2])
                     neue[song] = (
-                        c1.slider("Reifegrad", 0, 10, akt, key=f"r_{termin}_{nr}"),
+                        c1.select_slider(
+                            "Reifegrad", options=[None, *range(11)], value=akt,
+                            format_func=lambda wert: "Unbewertet" if wert is None else str(wert),
+                            key=f"r_{termin}_{nr}",
+                        ),
                         c2.text_input("Kommentar", value=kom, key=f"k_{termin}_{nr}"),
                     )
 
