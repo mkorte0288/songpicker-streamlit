@@ -1,4 +1,5 @@
 import os
+from io import BytesIO
 import zipfile
 from datetime import datetime
 
@@ -92,3 +93,17 @@ def sekunden_als_text(sekunden):
     if not sekunden:
         return "–"
     return f"{sekunden // 60} min" if sekunden < 3600 else f"{sekunden // 3600} h {(sekunden % 3600) // 60} min"
+
+
+def backup_als_zip():
+    """Downloadbares Backup aller drei Datendateien ohne temporäre ZIP-Datei."""
+    ausgabe = BytesIO()
+    with zipfile.ZipFile(ausgabe, "w", zipfile.ZIP_DEFLATED) as archiv:
+        for datei in (
+            APP_CONFIG["files"]["songs"],
+            APP_CONFIG["files"]["history"],
+            APP_CONFIG["files"]["naechste_probe"],
+        ):
+            if os.path.exists(datei):
+                archiv.write(datei, arcname=os.path.basename(datei))
+    return ausgabe.getvalue()
