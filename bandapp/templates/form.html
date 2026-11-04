@@ -1,0 +1,13 @@
+{% extends 'base.html' %}
+{% block title %}{{ title }} · Songpicker{% endblock %}
+{% block content %}
+{% if band %}<p><a href="{% url 'band' band.pk %}">Zurück zu {{ band.name }}</a></p>{% endif %}
+<section class="panel narrow">
+<h1>{{ title }}</h1>
+<form method="post" enctype="multipart/form-data">
+{% csrf_token %}{{ form.as_p }}
+{% if title == "Konto anlegen" and privacy_notice_url %}<p><a href="{{ privacy_notice_url }}">Datenschutzhinweise zur Registrierung</a></p>{% endif %}
+<button>{% if title == 'Konto anlegen' %}Konto anlegen{% else %}Speichern{% endif %}</button>
+</form>
+</section>
+{% endblock %}

@@ -1,0 +1,13 @@
+{% extends 'base.html' %}
+{% block content %}
+<section class="panel narrow">
+<h1>{{ title }}</h1>
+<p>{{ detail }}</p>
+<form method="post">{% csrf_token %}
+<label class="check"><input type="checkbox" name="confirm" value="yes" required>Ich möchte dauerhaft löschen.</label>
+<label>Aktuelles Passwort <input type="password" name="password" autocomplete="current-password" required></label>
+<button>{{ title }}</button>
+</form>
+<p><a href="{% url 'home' %}">Abbrechen</a></p>
+</section>
+{% endblock %}

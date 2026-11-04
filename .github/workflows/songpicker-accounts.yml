@@ -1,0 +1,53 @@
+name: Songpicker accounts
+on:
+  pull_request:
+    paths:
+      - 'bandapp/**'
+      - 'auswahl.py'
+      - 'manage.py'
+      - 'requirements-app.txt'
+      - '.github/workflows/songpicker-accounts.yml'
+permissions:
+  contents: read
+jobs:
+  postgres:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: songpicker
+          POSTGRES_PASSWORD: local-ci
+          POSTGRES_DB: songpicker
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U songpicker -d songpicker"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      SONGPICKER_DEV: '1'
+      DATABASE_URL: postgresql://songpicker:local-ci@localhost:5432/songpicker
+      PGSSLMODE: disable
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements-app.txt
+      - run: pip install -r requirements-app.txt
+      - run: python manage.py collectstatic --noinput
+      - run: python manage.py makemigrations --check --dry-run
+      - run: python manage.py test bandapp
+      - name: Verify restore into a separate database
+        shell: bash
+        run: |
+          docker exec ${{ job.services.postgres.id }} pg_isready -U songpicker -d songpicker
+          python manage.py migrate --noinput
+          python manage.py shell -c 'from bandapp.models import Band, Song, Played; from datetime import date; b=Band.objects.create(name="Synthetic backup check", logo=b"test-logo"); s=Song.objects.create(band=b,title="Test song"); Played.objects.create(song=s,day=date(2026,1,1))'
+          docker exec ${{ job.services.postgres.id }} pg_dump -U songpicker -Fc songpicker > "$RUNNER_TEMP/songpicker-test.dump"
+          docker exec ${{ job.services.postgres.id }} createdb -U songpicker songpicker_restore
+          docker exec -i ${{ job.services.postgres.id }} pg_restore -U songpicker --exit-on-error -d songpicker_restore < "$RUNNER_TEMP/songpicker-test.dump"
+          DATABASE_URL=postgresql://songpicker:local-ci@localhost:5432/songpicker_restore python manage.py shell -c 'from bandapp.models import Band, Played; assert bytes(Band.objects.get(name="Synthetic backup check").logo)==b"test-logo"; assert Played.objects.get().song.title=="Test song"'
