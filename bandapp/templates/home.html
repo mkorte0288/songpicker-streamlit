@@ -1,0 +1,13 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>Deine Bands</h1>
+<div class="grid">
+{% for membership in memberships %}
+<article class="panel">
+<h2><a href="{% url 'band' membership.band_id %}">{{ membership.band.name }}</a></h2>
+<p>{{ membership.get_role_display }}</p>
+</article>
+{% empty %}<p>Lege deine erste Band an oder öffne den Einladungslink deiner Band aus der E-Mail.</p>{% endfor %}
+</div>
+<p><a class="button" href="{% url 'create_band' %}">Band anlegen</a></p>
+{% endblock %}

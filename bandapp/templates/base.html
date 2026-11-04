@@ -1,0 +1,26 @@
+{% load static %}<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="same-origin">
+<title>{% block title %}Songpicker{% endblock %}</title>
+<link rel="stylesheet" href="{% static 'bandapp/app.css' %}">
+</head>
+<body>
+<a class="skip" href="#inhalt">Zum Inhalt</a>
+<header><nav aria-label="Hauptnavigation">
+<a class="brand" href="{% url 'home' %}">Songpicker</a>
+{% if user.is_authenticated %}
+<a href="{% url 'password_change' %}">Passwort ändern</a>
+<form method="post" action="{% url 'logout' %}">{% csrf_token %}<button class="secondary">Abmelden</button></form>
+{% else %}
+<a href="{% url 'login' %}">Anmelden</a><a href="{% url 'signup' %}">Konto anlegen</a>
+{% endif %}
+</nav></header>
+<main id="inhalt">
+{% if messages %}<div role="status">{% for message in messages %}<p class="notice {{ message.tags }}">{{ message }}</p>{% endfor %}</div>{% endif %}
+{% block content %}{% endblock %}
+</main>
+</body>
+</html>
