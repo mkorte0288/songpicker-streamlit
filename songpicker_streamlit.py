@@ -72,8 +72,9 @@ st.markdown(
       background: #b52c22; color: #fff; border-color: #b52c22; }}
   .stButton > button[data-testid="stBaseButton-primary"]:not(:disabled):hover {{
       background: #9f251e; border-color: #9f251e; }}
-  .stTabs [data-baseweb="tab-list"] {{ gap: 4px; border-bottom: 1px solid var(--line); }}
+  .stTabs [data-baseweb="tab-list"] {{ gap: 8px; border-bottom: 1px solid var(--line); }}
   .stTabs [data-baseweb="tab"] {{ background: transparent; border-radius: 0;
+      min-height: 44px; padding: 8px 12px;
       font-weight: 800; font-size: 13px; letter-spacing: .06em; text-transform: uppercase; }}
   .stTabs [data-baseweb="tab-highlight"] {{ display: none; }}
   .stTabs [role="tab"][aria-selected="true"] {{
@@ -92,8 +93,16 @@ st.markdown(
   .ffc-banner {{ border-left: 3px solid var(--red-bright); background: rgba(255,101,80,.08);
                  padding: 12px 16px; margin-bottom: 18px; font-size: 14px; }}
   @media (max-width: 700px) {{
-    .stTabs [data-baseweb="tab-list"] {{ flex-wrap: wrap; gap: 4px 8px; }}
-    .stTabs [role="tab"] {{ min-height: 44px; padding: 6px 8px; }}
+    .stTabs [data-baseweb="tab-list"] {{
+      display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px; padding-bottom: 8px;
+    }}
+    .stTabs [role="tab"] {{
+      width: 100%; min-width: 0; min-height: 48px;
+      padding: 8px 10px; justify-content: center;
+      border: 1px solid var(--line); border-radius: 4px;
+      white-space: normal; text-align: center;
+    }}
     .stButton > button {{ width: 100%; }}
   }}
 </style>
