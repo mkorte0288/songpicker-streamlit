@@ -1,10 +1,10 @@
 Songtitel;Interpret;Status;Spielzeit;Reifegrad;Anzahl_gespielt;Kommentar;Tags;Must_Play;Favorit;Notiz
 Proberaum Intro;Demo Band;im Set;3:20;8;3;;Rock;False;False;
 Midnight Drive;Demo Band;im Set;4:05;5;2;;Rock;True;False;
-First Light;Demo Band;im Set;3:45;3;1;;Rock;False;True;
+First Light;Demo Band;im Set;3:45;3;2;;Rock;False;True;
 Long Way Home;Demo Band;im Set;5:10;7;2;;Ballade;False;False;
-Broken Radio;Demo Band;im Set;4:12;;0;;Rock;False;False;
-Open Road;Demo Band;im Set;3:52;6;1;;Rock;True;False;
+Broken Radio;Demo Band;im Set;4:12;;1;;Rock;False;False;
+Open Road;Demo Band;im Set;3:52;6;2;;Rock;True;False;
 New Beginning;Demo Band;in Arbeit;4:08;2;0;;Ballade;False;False;
 Another Day;Demo Band;im Set;4:24;9;2;;Rock;False;False;
 Off the Record;Demo Band;Kandidat;3:29;;0;;Alternative;False;False;
