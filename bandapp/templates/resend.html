@@ -1,6 +1,0 @@
-{% extends 'base.html' %}
-{% block content %}
-<section class="panel narrow"><h1>Bestätigung erneut senden</h1>
-<form method="post">{% csrf_token %}<label>E-Mail <input required type="email" name="email" autocomplete="email"></label><button>Link anfordern</button></form>
-</section>
-{% endblock %}

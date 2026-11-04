@@ -3,14 +3,6 @@
 Streamlit-App zur Probenplanung mit Reifegrad, Must-Play-Markierungen,
 Spielhistorie und gewichteter Songauswahl.
 
-## Konto-App für mehrere Bands
-
-Die Konto-App bietet persönliche Anmeldung, E-Mail-Bestätigung, Passwort-Reset,
-Bandprofile mit Logo, Einladungen und getrennte Daten für jede Band. Einrichtung
-und Betrieb sind in [DEPLOYMENT.md](DEPLOYMENT.md) beschrieben.
-
-Die folgenden Hinweise gelten für die separate Streamlit-Version.
-
 ## Lokal starten
 
 1. Python 3.11 verwenden; dann: pip install -r requirements.txt

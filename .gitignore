@@ -4,7 +4,3 @@
 __pycache__/
 *.pyc
 backups/
-
-# Local account-based app
-/songpicker.sqlite3
-/staticfiles/
