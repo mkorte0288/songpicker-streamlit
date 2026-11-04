@@ -16,7 +16,7 @@ from django.contrib.auth.tokens import default_token_generator
 from django.core.exceptions import PermissionDenied
 from django.core.mail import send_mail
 from django.db import IntegrityError, connection, transaction
-from django.db.models import Count, Max
+from django.db.models import Count, F, Max
 from django.http import Http404, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import resolve, reverse, Resolver404
@@ -26,7 +26,7 @@ from django.views.decorators.http import require_http_methods, require_POST
 
 from auswahl import auswahl_gewichte
 
-from . import lifecycle
+from . import legacy_import, lifecycle
 from .forms import AccountNameForm, BandForm, DayForm, InviteForm, SignupForm, SongForm
 from .models import Band, Invitation, Membership, Plan, Played, Song
 
@@ -192,7 +192,7 @@ def band_page(request, membership):
         raise PermissionDenied
     today = timezone.localdate()
     songs = list(Song.objects.filter(band=band, archived=False)
-                 .annotate(times=Count("played"), last=Max("played__day")))
+                 .annotate(times=Count("played") + F("legacy_play_count"), last=Max("played__day")))
     song_by_id = {song.pk: song for song in songs}
     next_plan = (Plan.objects.filter(band=band, day__gte=today, completed=False)
                  .prefetch_related("songs").first())
@@ -219,17 +219,26 @@ def band_page(request, membership):
     review_day_form = DayForm(request.GET) if request.GET.get("day") else None
     review_day = (review_day_form.cleaned_data["day"] if review_day_form and review_day_form.is_valid()
                   else history[0].day if history else None)
-    reviewed = [item for item in history if item.day == review_day]
+    reviewed = list(Played.objects.filter(song__band=band, day=review_day).select_related("song")
+                    .order_by("song__title")) if review_day else []
     for item in reviewed:
         item.initial_grade = item.song.grade if item.song.grade is not None else 5
     search = request.GET.get("q", "").strip()[:100]
     status = request.GET.get("status", "")
     listed_songs = [song for song in songs if (not search or search.casefold() in song.title.casefold()
                     or search.casefold() in song.artist.casefold()) and (not status or song.status == status)]
+    sort = request.GET.get("sort", "title")
+    if sort == "played":
+        listed_songs.sort(key=lambda song: (-song.times, song.title.casefold()))
+    elif sort == "grade":
+        listed_songs.sort(key=lambda song: (song.grade is None, song.grade if song.grade is not None else 11,
+                                           song.title.casefold()))
+    else:
+        sort = "title"
     ungraded = [song for song in songs if song.grade is None]
     rated = [song.grade for song in songs if song.grade is not None]
     grades = [{"value": value, "count": rated.count(value)} for value in range(11)]
-    return render(request, "band_workflow.html", {
+    return render(request, "band.html", {
         "membership": membership, "band": band, "tab": tab, "songs": songs, "history": history,
         "can_edit": can_edit, "next_plan": next_plan, "plans": plans, "plan_songs": plan_songs,
         "plan_duration": _duration(sum(song.duration for song in plan_songs)),
@@ -239,11 +248,15 @@ def band_page(request, membership):
         "record_day": record_day.isoformat(), "record_plan": record_plan,
         "record_songs": record_songs, "other_songs": other_songs,
         "review_day": review_day, "reviewed": reviewed,
-        "listed_songs": listed_songs, "search": search, "status_filter": status,
+        "listed_songs": listed_songs, "search": search, "status_filter": status, "sort": sort,
         "archived_songs": Song.objects.filter(band=band, archived=True),
         "ungraded": ungraded, "rated_average": round(sum(rated) / len(rated), 1) if rated else None,
         "grades": grades, "set_songs": [song for song in songs if song.status == "set"],
         "set_duration": _duration(sum(song.duration for song in songs if song.status == "set")),
+        "under_four": len([grade for grade in rated if grade < 4]),
+        "rehearsal_count": Played.objects.filter(song__band=band).values("day").distinct().count(),
+        "top_songs": sorted(songs, key=lambda song: song.times, reverse=True)[:10],
+        "legacy_count": sum(song.legacy_play_count for song in songs),
     })
 
 
@@ -344,9 +357,11 @@ def change_member(request, membership, member_id):
         if role == "remove" and request.POST.get("confirm") == "remove":
             Invitation.objects.filter(band=membership.band, email=member.user.email).delete()
             member.delete()
+            messages.success(request, "Zugang entfernt.")
         elif role == "change" and request.POST.get("new_role") in (EDITOR, Membership.Role.MEMBER):
             member.role = request.POST["new_role"]
             member.save(update_fields=["role"])
+            messages.success(request, "Rolle gespeichert. Du kannst sie hier jederzeit erneut ändern.")
         else:
             raise PermissionDenied
     return redirect("band_settings", band_id=membership.band_id)
@@ -427,7 +442,7 @@ def edit_song(request, membership, song_id=None):
             form.add_error("title", "Ein Song mit diesem Titel existiert bereits in dieser Band.")
         else:
             messages.success(request, "Song gespeichert.")
-            return redirect("band", band_id=band.pk)
+            return redirect(_tab_url(band.pk, "songs"))
     return render(request, "form.html", {"title": "Song bearbeiten" if song_id else "Song hinzufügen",
                                           "form": form, "band": band})
 
@@ -460,8 +475,8 @@ def suggest(request, membership):
         count = int(request.POST.get("count", 5))
     except ValueError:
         count = 0
-    if not form.is_valid() or not 1 <= count <= 30:
-        messages.error(request, "Bitte ein gültiges Datum und 1 bis 30 Songs angeben.")
+    if not form.is_valid() or not 1 <= count <= 30 or form.cleaned_data.get("day", timezone.localdate()) < timezone.localdate():
+        messages.error(request, "Bitte ein heutiges oder künftiges Datum und 1 bis 30 Songs angeben.")
     else:
         candidates = list(Song.objects.filter(band=membership.band, archived=False, status="set")
                           .annotate(last=Max("played__day")))
@@ -490,7 +505,9 @@ def change_draft(request, membership):
     key = f"draft_{membership.band_id}"
     draft = list(request.session.get(key, []))
     action = request.POST.get("action")
-    if action == "add" and song.pk not in draft:
+    if action == "add" and song.pk not in draft and len(draft) >= 30:
+        messages.error(request, "Ein Vorschlag kann höchstens 30 Songs enthalten.")
+    elif action == "add" and song.pk not in draft:
         draft.append(song.pk)
     elif action == "remove" and song.pk in draft:
         draft.remove(song.pk)
@@ -534,8 +551,9 @@ def save_plan(request, membership):
         songs = list(Song.objects.filter(pk__in=draft, band=band, archived=False))
         if len(songs) != len(set(draft)):
             raise Http404
-    if not form.is_valid() or not songs:
-        messages.error(request, "Wähle ein gültiges Datum und mindestens einen Song aus.")
+    if (not form.is_valid() or form.cleaned_data.get("day", timezone.localdate()) < timezone.localdate()
+            or not songs or len(songs) > 30):
+        messages.error(request, "Wähle ein heutiges oder künftiges Datum und 1 bis 30 Songs aus.")
     else:
         with transaction.atomic():
             Band.objects.select_for_update().get(pk=band.pk)
@@ -608,4 +626,38 @@ def import_songs(request, membership):
             existing.add(title.casefold())
     Song.objects.bulk_create(unique)
     messages.success(request, f"{len(unique)} Songs hinzugefügt; {len(lines) - len(unique)} Duplikate übersprungen.")
+    return redirect(_tab_url(membership.band_id, "songs"))
+
+
+@band_access(ADMIN)
+@require_POST
+def import_legacy(request, membership):
+    if request.POST.get("confirm") != "import":
+        raise PermissionDenied
+    song_upload = request.FILES.get("songliste")
+    history_upload = request.FILES.get("spielhistorie")
+    if not song_upload or not history_upload:
+        messages.error(request, "Wähle Songliste und Spielhistorie aus.")
+        return redirect(_tab_url(membership.band_id, "songs"))
+    try:
+        prepared, played, duplicates, corrections = legacy_import.parse_legacy(song_upload, history_upload)
+    except ValueError as error:
+        messages.error(request, str(error))
+        return redirect(_tab_url(membership.band_id, "songs"))
+    with transaction.atomic():
+        Band.objects.select_for_update().get(pk=membership.band_id)
+        if Song.objects.filter(band=membership.band).exists():
+            messages.error(request, "Die alte Datenübernahme ist nur für eine leere Band möglich.")
+            return redirect(_tab_url(membership.band_id, "songs"))
+        song_by_title = {}
+        for item in prepared:
+            song = Song.objects.create(band=membership.band, **item)
+            song_by_title[legacy_import._key(song.title)] = song
+        Played.objects.bulk_create([
+            Played(song=song_by_title[key], day=day) for key, day in played
+        ])
+    messages.success(request,
+        f"Songs übernommen: {len(prepared)}. Historieneinträge: {len(played)}. "
+        f"{duplicates} doppelte Historienzeilen ausgelassen; bei {corrections} Songs war "
+        "der Historienzähler höher als der alte Gesamtzähler.")
     return redirect(_tab_url(membership.band_id, "songs"))

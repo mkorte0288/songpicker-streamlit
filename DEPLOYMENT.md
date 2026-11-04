@@ -35,8 +35,8 @@ gesicherte laufende Preisgrundlage.
 
 ### Im Dashboard eintragen
 
-1. Das Repository in Render verbinden und die Vorlage auf dem Branch
-   `feat/songpicker-band-accounts` auswählen. Vor Bestätigung prüfen, dass
+1. Das Repository in Render verbinden und die Vorlage auf dem freigegebenen
+   Stand auswählen. Vor Bestätigung prüfen, dass
    nur der kostenlose Webservice provisioniert wird.
 2. Bei Neon ein separates PostgreSQL-Projekt in einer EU-Region anlegen.
    Die Verbindungs-URL als `DATABASE_URL` in Render setzen. TLS ist
@@ -85,3 +85,22 @@ prüfen und die Auftragsverarbeitung dokumentieren.
    Löschfrist für Sicherungen festlegen. Den Ablauf und das Ergebnis datieren.
 7. Nach einem Neustart prüfen, dass Logo, Songliste, Planung und Historie
    erhalten bleiben. Erst danach Foo Fightclub einladen und das Datum festhalten.
+
+### Foo Fightclub: alte Daten übernehmen
+
+Nach der technischen Abnahme legt der Admin eine **leere** Band an und öffnet
+„Songs → Alte Songpicker-Daten übernehmen“. Dort lädt er `songliste.csv` und
+`spielhistorie.csv` aus dem bisherigen Songpicker hoch. Die Übernahme ist nur
+einmal und nur in eine leere Band möglich. Vorher eine Sicherung der beiden
+Dateien anlegen. Anschließend Anzahl und Stichproben von Titeln, Status,
+Spielzeit, Reifegrad, Must-Play, Favoriten, Tags, Kommentaren, Notizen und
+Historie prüfen.
+
+Gleiche Songtitel an demselben Probentag werden in der Historie zusammengefasst.
+Der alte Gesamtzähler bleibt als Kombination aus datierten Historieneinträgen
+und einem undatierten Altbestand erhalten. Falls die Historie mehr Einträge als
+der alte Zähler enthält, zeigt die App die Abweichung beim Import an und
+verwendet die belegten Historieneinträge. Die alte Datei
+`naechste_probe.csv` enthält kein Datum; diese Probe muss mit einem Datum neu
+geplant werden. Die alte Streamlit-App bleibt bis zur fachlichen Prüfung die
+Referenz. Öffentliche Registrierung erst nach dieser Abnahme freigeben.

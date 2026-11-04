@@ -97,7 +97,7 @@ class SongForm(forms.ModelForm):
 
     class Meta:
         model = Song
-        fields = ("title", "artist", "status", "duration", "grade", "must_play", "comment")
+        fields = ("title", "artist", "status", "duration", "grade", "must_play", "favorite", "tags", "comment", "note")
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -106,7 +106,10 @@ class SongForm(forms.ModelForm):
 
     def clean_duration(self):
         minutes, seconds = map(int, self.cleaned_data["duration"].split(":"))
-        return minutes * 60 + seconds
+        duration = minutes * 60 + seconds
+        if duration > 24 * 60 * 60:
+            raise forms.ValidationError("Die Spielzeit darf höchstens 24 Stunden betragen.")
+        return duration
 
 
 class DayForm(forms.Form):

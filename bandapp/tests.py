@@ -150,6 +150,37 @@ class AccountAndBandTests(TestCase):
         self.client.post(reverse("restore_song", args=[band.pk, first.pk]))
         self.assertFalse(Song.objects.get(pk=first.pk).archived)
 
+    def test_old_csv_import_preserves_counts_and_rejects_second_import(self):
+        self.account(self.client, "owner@example.com")
+        self.client.post(reverse("create_band"), {"name": "Band A"})
+        band = Band.objects.get(name="Band A")
+        songs = (
+            "Songtitel;Interpret;Status;Spielzeit;Reifegrad;Anzahl_gespielt;Must_Play;Favorit;Tags;Kommentar;Notiz\n"
+            "Walk;Foo Fighters;im Set;4:40;7;4;True;False;Laut;Gut;Probe\n"
+            "Big Me;Foo Fighters;nicht im Repertoire;;0;0;False;True;;;\n"
+        )
+        history = "Songtitel;Gespielt_am\nwalk;2026-01-05\nWalk;2026-01-05\n"
+
+        def upload():
+            return {
+                "songliste": SimpleUploadedFile("songliste.csv", songs.encode()),
+                "spielhistorie": SimpleUploadedFile("spielhistorie.csv", history.encode()),
+                "confirm": "import",
+            }
+
+        url = reverse("import_legacy", args=[band.pk])
+        response = self.client.post(url, upload(), follow=True)
+        self.assertContains(response, "Songs übernommen: 2. Historieneinträge: 1.")
+        self.assertEqual(Played.objects.count(), 1)
+        walk = Song.objects.get(band=band, title="Walk")
+        self.assertEqual(walk.legacy_play_count, 3)
+        self.assertEqual(walk.duration, 280)
+        self.assertTrue(walk.must_play)
+        self.assertEqual(Song.objects.get(band=band, title="Big Me").status, "out")
+        self.assertContains(self.client.get(reverse("band", args=[band.pk]) + "?tab=songs"), "4× laut Zähler")
+        self.assertContains(self.client.post(url, upload(), follow=True), "nur für eine leere Band")
+        self.assertEqual(Song.objects.filter(band=band).count(), 2)
+
     def test_admin_transfer_and_deletion_keep_band_usable(self):
         self.account(self.client, "owner@example.com")
         self.client.post(reverse("create_band"), {"name": "Band A"})

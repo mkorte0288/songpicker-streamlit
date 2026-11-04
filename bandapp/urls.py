@@ -30,6 +30,7 @@ urlpatterns = [
     path("bands/<uuid:band_id>/songs/<int:song_id>/archivieren/", views.archive_song, name="archive_song"),
     path("bands/<uuid:band_id>/songs/<int:song_id>/wiederherstellen/", views.restore_song, name="restore_song"),
     path("bands/<uuid:band_id>/songs/importieren/", views.import_songs, name="import_songs"),
+    path("bands/<uuid:band_id>/songs/altbestand/", views.import_legacy, name="import_legacy"),
     path("bands/<uuid:band_id>/vorschlag/", views.suggest, name="suggest"),
     path("bands/<uuid:band_id>/vorschlag/aendern/", views.change_draft, name="change_draft"),
     path("bands/<uuid:band_id>/planung/laden/", views.load_plan, name="load_plan"),

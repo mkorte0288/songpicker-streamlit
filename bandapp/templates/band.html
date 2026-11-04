@@ -1,71 +1,41 @@
 {% extends 'base.html' %}
 {% block title %}{{ band.name }} · Songpicker{% endblock %}
 {% block content %}
-<div class="band-title">
-{% if band.logo %}<img class="logo" src="{% url 'logo' band.pk %}" alt="Bandlogo">{% endif %}
-<div><p class="eyebrow">Dein Proberaum</p><h1>{{ band.name }}</h1><p>{{ membership.get_role_display }}</p></div>
-{% if membership.role == 'admin' %}<a class="button secondary" href="{% url 'band_settings' band.pk %}">Band-Einstellungen</a>{% endif %}
-</div>
-<nav class="sections" aria-label="Bandbereiche">
-<a href="#naechste">Nächste Probe</a>
-{% if can_edit %}<a href="#planen">Planen</a><a href="#erfassen">Erfassen</a>{% endif %}
-<a href="#songs">Songs</a><a href="#historie">Historie</a>
-</nav>
-<section class="panel" id="naechste"><h2>Nächste Probe</h2>
-{% if plan and plan_songs %}
-<p>{{ plan.day|date:'d.m.Y' }}</p>
-<ul class="cards">{% for song in plan_songs %}<li><strong>{{ song.title }}</strong>{% if song.artist %} · {{ song.artist }}{% endif %}</li>{% endfor %}</ul>
-{% else %}<p>Es ist noch keine Probe geplant.</p>{% endif %}
-</section>
-{% if can_edit %}
-<section class="panel" id="planen"><h2>Probe planen</h2>
-<form method="post" action="{% url 'suggest' band.pk %}" class="row">{% csrf_token %}
-<label>Probendatum <input type="date" name="day" value="{{ draft_day|default:today }}" required></label>
-<label>Songanzahl <input type="number" name="count" min="1" max="30" value="5" required></label>
-<button class="secondary">Gewichteten Vorschlag erstellen</button>
-</form>
-{% if songs %}
-<form method="post" action="{% url 'save_plan' band.pk %}">{% csrf_token %}
-<label>Probendatum <input type="date" name="day" value="{{ draft_day|default:today }}" required></label>
-<fieldset><legend>Für die Probe geplante Songs</legend>
-{% for song in songs %}<label class="check"><input type="checkbox" name="songs" value="{{ song.pk }}" {% if song in draft %}checked{% endif %}>{{ song.title }}</label>{% endfor %}
-</fieldset>
-<button>Probenplanung speichern</button>
-</form>
-{% else %}<p>Füge zuerst einen Song hinzu.</p>{% endif %}
-</section>
-<section class="panel" id="erfassen"><h2>Probe erfassen</h2>
-<p>Wähle nur die Songs aus, die ihr an diesem Datum tatsächlich gespielt habt.</p>
-{% if songs %}
-<form method="post" action="{% url 'record' band.pk %}">{% csrf_token %}
-<label>Probendatum <input type="date" name="day" value="{{ today }}" required></label>
-<fieldset><legend>Tatsächlich gespielt</legend>
-{% for song in songs %}<label class="check"><input type="checkbox" name="songs" value="{{ song.pk }}">{{ song.title }}</label>{% endfor %}
-</fieldset>
-<button>Gespielte Songs erfassen</button>
-</form>
+<div class="band-title">{% if band.logo %}<img class="logo" src="{% url 'logo' band.pk %}" alt="Bandlogo">{% endif %}<h1>{{ band.name }}</h1>{% if membership.role == 'admin' %}<a class="button secondary" href="{% url 'band_settings' band.pk %}">Band-Einstellungen</a>{% endif %}</div>
+<nav class="sections" aria-label="Bandbereiche"><a href="{% url 'band' band.pk %}" {% if tab == 'naechste' %}aria-current="page"{% endif %}>Nächste Probe</a>{% if can_edit %}<a href="?tab=planen" {% if tab == 'planen' %}aria-current="page"{% endif %}>Planen</a><a href="?tab=erfassen" {% if tab == 'erfassen' %}aria-current="page"{% endif %}>Erfassen</a>{% endif %}<a href="?tab=songs" {% if tab == 'songs' %}aria-current="page"{% endif %}>Songs</a><a href="?tab=historie" {% if tab == 'historie' %}aria-current="page"{% endif %}>Historie</a><a href="?tab=analyse" {% if tab == 'analyse' %}aria-current="page"{% endif %}>Analyse</a></nav>
+
+{% if tab == 'naechste' %}
+<section class="panel"><h2>Nächste Probe</h2>{% if next_plan and plan_songs %}<p class="date-line">{{ next_plan.day|date:'d.m.Y' }} · {{ plan_songs|length }} Songs · {{ plan_duration }} Minuten</p><ul class="cards">{% for song in plan_songs %}<li><strong>{{ song.title }}</strong>{% if song.artist %} · {{ song.artist }}{% endif %}<p>{{ song.duration_label }} Min. · Reifegrad {{ song.grade|default_if_none:'unbewertet' }}{% if song.must_play %} · ★ Must-Play{% endif %}</p>{% if song.grade is not None %}<progress value="{{ song.grade }}" max="10" aria-label="Reifegrad {{ song.grade }} von 10"></progress>{% endif %}</li>{% endfor %}</ul>{% if can_edit %}<a class="button" href="?tab=erfassen&amp;day={{ next_plan.day|date:'Y-m-d' }}">Probe erfassen</a>{% endif %}{% else %}<p>Es ist keine kommende Probe geplant.</p>{% if can_edit %}<a class="button" href="?tab=planen">Probe planen</a>{% endif %}{% endif %}</section>
+{% if plans|length > 1 %}<section class="panel"><h2>Weitere Termine</h2><ul>{% for plan in plans %}{% if plan.pk != next_plan.pk %}<li>{{ plan.day|date:'d.m.Y' }} · {{ plan.songs.count }} Songs</li>{% endif %}{% endfor %}</ul></section>{% endif %}
+{% if ungraded %}<p class="notice">{{ ungraded|length }} Songs sind noch unbewertet.</p>{% endif %}
+
+{% elif tab == 'planen' %}
+<section class="panel"><h2>Probe planen</h2><p>Der Vorschlag berücksichtigt Reifegrad, Must-Play und die Zeit seit dem letzten erfassten Spielen.</p><form method="post" action="{% url 'suggest' band.pk %}" class="form-row">{% csrf_token %}<label>Probendatum <input type="date" name="day" value="{{ draft_day|default:today }}" required></label><label>Songanzahl <input type="number" name="count" min="1" max="30" value="5" required></label><button>Vorschlag erstellen</button></form></section>
+{% if draft_day %}<section class="panel" id="vorschlag"><h2>Vorschlag für {{ draft_day }}</h2><p>{{ draft_songs|length }} Songs · {{ draft_duration }} Minuten. Die Hinweise zeigen Gewichtungsfaktoren; die Auswahl enthält einen Zufallsanteil.</p><ol class="cards">{% for song in draft_songs %}<li><div class="row spread"><div><strong>{{ song.title }}</strong>{% if song.artist %} · {{ song.artist }}{% endif %}<p>{{ song.duration_label }} Min. · {{ song.reason }}</p></div><form method="post" action="{% url 'change_draft' band.pk %}">{% csrf_token %}<input type="hidden" name="song" value="{{ song.pk }}"><button class="secondary" name="action" value="remove">Entfernen</button></form></div></li>{% empty %}<li>Ergänze einen Song.</li>{% endfor %}</ol>
+{% if addable_songs %}<form method="post" action="{% url 'change_draft' band.pk %}" class="form-row">{% csrf_token %}<label>Song ergänzen <select name="song">{% for song in addable_songs %}<option value="{{ song.pk }}">{{ song.title }}</option>{% endfor %}</select></label><button class="secondary" name="action" value="add">Hinzufügen</button></form>{% endif %}
+{% if draft_songs %}<form method="post" action="{% url 'save_plan' band.pk %}">{% csrf_token %}<input type="hidden" name="day" value="{{ draft_day }}"><button>Probe speichern</button></form>{% endif %}</section>{% endif %}
+{% if plans %}<section class="panel"><h2>Gespeicherte Termine</h2><ul>{% for plan in plans %}<li>{{ plan.day|date:'d.m.Y' }} · {{ plan.songs.count }} Songs <form method="post" action="{% url 'load_plan' band.pk %}" class="inline-form">{% csrf_token %}<input type="hidden" name="day" value="{{ plan.day|date:'Y-m-d' }}"><button class="secondary">Bearbeiten</button></form></li>{% endfor %}</ul></section>{% endif %}
+
+{% elif tab == 'erfassen' %}
+<section class="panel"><h2>Probe erfassen</h2><form method="get" class="form-row"><input type="hidden" name="tab" value="erfassen"><label>Probendatum <input type="date" name="day" value="{{ record_day }}" required></label><button class="secondary">Planung laden</button></form>{% if record_plan %}<p>Die geplanten Songs sind vorausgewählt. Passe sie an das tatsächlich Gespielte an.</p>{% else %}<p>Für dieses Datum gibt es keine Planung.</p>{% endif %}
+<form method="post" action="{% url 'record' band.pk %}">{% csrf_token %}<input type="hidden" name="day" value="{{ record_day }}">{% if record_songs %}<fieldset><legend>Geplant</legend>{% for song in record_songs %}<label class="check"><input type="checkbox" name="songs" value="{{ song.pk }}" checked>{{ song.title }}</label>{% endfor %}</fieldset>{% endif %}{% if other_songs %}<details {% if not record_songs %}open{% endif %}><summary>Weitere Songs auswählen</summary><fieldset><legend>Weitere Songs</legend>{% for song in other_songs %}<label class="check"><input type="checkbox" name="songs" value="{{ song.pk }}">{{ song.title }}</label>{% endfor %}</fieldset></details>{% endif %}{% if songs %}<p><button>Gespielte Songs speichern</button></p>{% else %}<p>Füge zuerst Songs hinzu.</p>{% endif %}</form></section>
+
+{% elif tab == 'nachbereitung' %}
+<section class="panel"><h2>Wie lief es?</h2>{% if reviewed %}<p>{{ reviewed|length }} Songs am {{ review_day|date:'d.m.Y' }}. Bewerte sie für den nächsten Vorschlag.</p><form method="post" action="{% url 'rate_rehearsal' band.pk %}">{% csrf_token %}<input type="hidden" name="day" value="{{ review_day|date:'Y-m-d' }}">{% for item in reviewed %}<fieldset class="rating"><legend>{{ item.song.title }}</legend><div class="rating-options">{% for grade in grades %}<label><input type="radio" name="grade_{{ item.song_id }}" value="{{ grade.value }}" {% if item.initial_grade == grade.value %}checked{% endif %}><span>{{ grade.value }}</span></label>{% endfor %}</div></fieldset>{% endfor %}<button>Reifegrade speichern</button></form>{% else %}<p>Für diesen Tag sind keine gespielten Songs erfasst.</p>{% endif %}<p><a href="?tab=historie">Zur Historie</a></p></section>
+
+{% elif tab == 'songs' %}
+<section class="panel"><h2>Songliste</h2>{% if can_edit %}<p><a class="button" href="{% url 'new_song' band.pk %}">Song hinzufügen</a></p>{% endif %}<form method="get" class="form-row"><input type="hidden" name="tab" value="songs"><label>Suche <input type="search" name="q" value="{{ search }}" placeholder="Titel oder Interpret"></label><label>Status <select name="status"><option value="">Alle</option><option value="set" {% if status_filter == 'set' %}selected{% endif %}>Im Set</option><option value="work" {% if status_filter == 'work' %}selected{% endif %}>In Arbeit</option><option value="candidate" {% if status_filter == 'candidate' %}selected{% endif %}>Kandidat</option><option value="unclear" {% if status_filter == 'unclear' %}selected{% endif %}>Zu klären</option><option value="out" {% if status_filter == 'out' %}selected{% endif %}>Nicht im Repertoire</option></select></label><label>Sortierung <select name="sort"><option value="title" {% if sort == 'title' %}selected{% endif %}>Titel A–Z</option><option value="played" {% if sort == 'played' %}selected{% endif %}>Meistgespielt</option><option value="grade" {% if sort == 'grade' %}selected{% endif %}>Reifegrad aufsteigend</option></select></label><button class="secondary">Anzeigen</button></form><p>{{ listed_songs|length }} von {{ songs|length }} Songs</p><ul class="cards">{% for song in listed_songs %}<li><strong>{{ song.title }}</strong>{% if song.artist %} · {{ song.artist }}{% endif %}<p>{{ song.get_status_display }} · {{ song.duration_label }} Min. · Reifegrad {{ song.grade|default_if_none:'unbewertet' }} · {{ song.times }}× laut Zähler{% if song.legacy_play_count %} ({{ song.legacy_play_count }} aus Altbestand){% endif %}{% if song.must_play %} · ★ Must-Play{% endif %}</p>{% if song.grade is not None %}<progress value="{{ song.grade }}" max="10" aria-label="Reifegrad {{ song.grade }} von 10"></progress>{% endif %}{% if song.tags %}<p>Tags: {{ song.tags }}</p>{% endif %}{% if song.favorite %}<p>★ Favorit</p>{% endif %}{% if song.comment %}<p>{{ song.comment }}</p>{% endif %}{% if can_edit %}<div class="row"><a href="{% url 'edit_song' band.pk song.pk %}">Bearbeiten</a><details><summary>Archivieren</summary><p>Frühere Proben bleiben erhalten.</p><form method="post" action="{% url 'archive_song' band.pk song.pk %}">{% csrf_token %}<button class="secondary">Archivierung bestätigen</button></form></details></div>{% endif %}</li>{% empty %}<li>Keine passenden Songs.</li>{% endfor %}</ul></section>
+{% if can_edit %}<section class="panel"><h2>Viele Songs hinzufügen</h2><p>Ein Titel pro Zeile. Details kannst du später ergänzen.</p><form method="post" action="{% url 'import_songs' band.pk %}">{% csrf_token %}<label>Songtitel<textarea name="titles" rows="8" placeholder="Everlong&#10;The Pretender&#10;Walk" required></textarea></label><button>Titel übernehmen</button></form></section>{% if archived_songs %}<section class="panel"><details><summary>Archivierte Songs</summary><ul>{% for song in archived_songs %}<li>{{ song.title }} <form method="post" action="{% url 'restore_song' band.pk song.pk %}" class="inline-form">{% csrf_token %}<button class="secondary">Wiederherstellen</button></form></li>{% endfor %}</ul></details></section>{% endif %}{% endif %}
+
+{% if membership.role == 'admin' and not songs %}
+<section class="panel"><h2>Alte Songpicker-Daten übernehmen</h2><p>Nur für eine leere Band. Lade die alte Songliste und Spielhistorie als CSV hoch. Doppelte Historienzeilen werden zusammengefasst; die alten Zähler bleiben erhalten, soweit sie über die Historie hinausgehen. Die undatierte Auswahl für die nächste Probe musst du danach neu planen.</p>
+<form method="post" action="{% url 'import_legacy' band.pk %}" enctype="multipart/form-data">{% csrf_token %}<label>songliste.csv <input type="file" name="songliste" accept=".csv,text/csv" required></label><label>spielhistorie.csv <input type="file" name="spielhistorie" accept=".csv,text/csv" required></label><label class="check"><input type="checkbox" name="confirm" value="import" required>Ich möchte diese Daten in die leere Band übernehmen.</label><button>Alte Daten übernehmen</button></form></section>
 {% endif %}
-</section>
-{% endif %}
-<section class="panel" id="songs"><h2>Songliste</h2>
-{% if can_edit %}<p><a class="button" href="{% url 'new_song' band.pk %}">Song hinzufügen</a></p>{% endif %}
-<ul class="cards">{% for song in songs %}
-<li><strong>{{ song.title }}</strong>{% if song.artist %} · {{ song.artist }}{% endif %}
-<p>{{ song.get_status_display }} · Reifegrad {{ song.grade|default_if_none:"unbewertet" }} · {{ song.times }}× gespielt</p>
-{% if song.comment %}<p>{{ song.comment }}</p>{% endif %}
-{% if can_edit %}<div class="row"><a href="{% url 'edit_song' band.pk song.pk %}">Bearbeiten</a>
-<form method="post" action="{% url 'archive_song' band.pk song.pk %}">{% csrf_token %}<button class="secondary">Archivieren</button></form></div>{% endif %}
-</li>{% empty %}<li>Die Songliste ist leer.</li>{% endfor %}</ul>
-</section>
-<section class="panel" id="historie"><h2>Letzte Proben</h2>
-{% regroup history by day as rehearsals %}
-{% for rehearsal in rehearsals %}
-<h3>{{ rehearsal.grouper|date:'d.m.Y' }}</h3>
-<ul>{% for item in rehearsal.list %}<li>{{ item.song.title }}</li>{% endfor %}</ul>
-{% empty %}<p>Noch keine Songs erfasst.</p>{% endfor %}
-</section>
-{% if membership.role != 'admin' %}
-<form method="post" action="{% url 'leave_band' band.pk %}">{% csrf_token %}
-<button class="secondary">Band verlassen</button></form>
+
+{% elif tab == 'historie' %}
+<section class="panel"><h2>Letzte Proben</h2>{% regroup history by day as rehearsals %}{% for rehearsal in rehearsals %}<h3>{{ rehearsal.grouper|date:'d.m.Y' }}</h3><ul>{% for item in rehearsal.list %}<li>{{ item.song.title }}</li>{% endfor %}</ul>{% if can_edit %}<p><a href="?tab=nachbereitung&amp;day={{ rehearsal.grouper|date:'Y-m-d' }}">Reifegrade bearbeiten</a></p>{% endif %}{% empty %}<p>Noch keine Songs erfasst.</p>{% endfor %}</section>
+
+{% elif tab == 'analyse' %}
+<section class="panel"><h2>Analyse</h2><div class="stats"><div><strong>{{ songs|length }}</strong><span>Songs</span></div><div><strong>{{ set_songs|length }}</strong><span>Im Set</span></div><div><strong>{{ set_duration }}</strong><span>Setlänge in Minuten</span></div><div><strong>{{ rated_average|default_if_none:'–' }}</strong><span>Ø Reifegrad</span></div></div>{% if ungraded %}<p class="notice">{{ ungraded|length }} Songs sind unbewertet. Die Gewichtung behandelt sie vorläufig wie Reifegrad 5.</p><details><summary>Unbewertete Songs ansehen</summary><ul>{% for song in ungraded %}<li>{{ song.title }}</li>{% endfor %}</ul></details>{% endif %}<p>{{ rehearsal_count }} Proben erfasst · {{ under_four }} Songs unter Reifegrad 4.</p>{% if legacy_count %}<p class="notice">{{ legacy_count }} frühere Spiele stehen nur in den alten Zählern; für sie ist kein einzelner Probentag bekannt.</p>{% endif %}<h3>Meistgespielt</h3><ol>{% for song in top_songs %}<li>{{ song.title }} · {{ song.times }}× laut Zähler</li>{% endfor %}</ol><h3>Reifegrad-Verteilung</h3><ul class="grade-chart">{% for grade in grades %}<li><span>{{ grade.value }}</span><progress value="{{ grade.count }}" max="{{ songs|length }}" aria-label="Reifegrad {{ grade.value }}: {{ grade.count }} Songs"></progress><span>{{ grade.count }}</span></li>{% endfor %}</ul></section>
 {% endif %}
 {% endblock %}
