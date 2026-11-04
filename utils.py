@@ -105,5 +105,5 @@ def backup_als_zip():
             APP_CONFIG["files"]["naechste_probe"],
         ):
             if os.path.exists(datei):
-                archiv.write(datei)
+                archiv.write(datei, arcname=os.path.basename(datei))
     return ausgabe.getvalue()
