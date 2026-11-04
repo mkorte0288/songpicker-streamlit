@@ -76,11 +76,28 @@ class InviteForm(forms.Form):
 
 
 class SongForm(forms.ModelForm):
+    duration = forms.RegexField(
+        regex=r"\A[0-9]{1,8}:[0-5][0-9]\Z",
+        label="Spielzeit (Minuten:Sekunden)",
+        max_length=11,
+        help_text="Zum Beispiel 4:35 für 4 Minuten und 35 Sekunden. Falls unbekannt: 0:00.",
+        widget=forms.TextInput(attrs={"placeholder": "4:35"}),
+        error_messages={"invalid": "Gib die Spielzeit als Minuten:Sekunden ein, zum Beispiel 4:35."},
+    )
     grade = forms.IntegerField(label="Reifegrad (0–10)", required=False, min_value=0, max_value=10)
 
     class Meta:
         model = Song
         fields = ("title", "artist", "status", "duration", "grade", "must_play", "comment")
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        minutes, seconds = divmod(self.initial.get("duration", self.instance.duration), 60)
+        self.initial["duration"] = f"{minutes}:{seconds:02d}"
+
+    def clean_duration(self):
+        minutes, seconds = map(int, self.cleaned_data["duration"].split(":"))
+        return minutes * 60 + seconds
 
 
 class DayForm(forms.Form):

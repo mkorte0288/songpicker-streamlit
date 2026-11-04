@@ -92,9 +92,16 @@ class AccountAndBandTests(TestCase):
         self.client.post(reverse("create_band"), {"name": "Band A"})
         band = Band.objects.get(name="Band A")
         self.client.post(reverse("new_song", args=[band.pk]), {
-            "title": "Walk", "status": "set", "duration": 280, "grade": 7,
+            "title": "Walk", "status": "set", "duration": "4:40", "grade": 7,
         })
         song = Song.objects.get()
+        self.assertEqual(song.duration, 280)
+        edit_song = reverse("edit_song", args=[band.pk, song.pk])
+        self.assertContains(self.client.get(edit_song), 'value="4:40"')
+        invalid = self.client.post(edit_song, {"title": "Walk", "status": "set", "duration": "4:60"})
+        self.assertContains(invalid, "Gib die Spielzeit als Minuten:Sekunden ein")
+        song.refresh_from_db()
+        self.assertEqual(song.duration, 280)
         day = "2026-11-04"
         suggest = self.client.post(reverse("suggest", args=[band.pk]), {"day": day, "count": 5}, follow=True)
         self.assertContains(suggest, "Für die Probe geplante Songs")
