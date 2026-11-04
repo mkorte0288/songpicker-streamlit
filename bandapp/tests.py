@@ -1,5 +1,5 @@
 import re
-from datetime import timedelta
+from datetime import date, timedelta
 from io import BytesIO
 from urllib.parse import urlsplit
 
@@ -144,7 +144,12 @@ class AccountAndBandTests(TestCase):
         for day in (day1, day2):
             self.client.post(reverse("save_plan", args=[band.pk]), {"day": day, "songs": [first.pk]})
         self.assertEqual(Plan.objects.filter(band=band).count(), 2)
-        self.assertContains(self.client.get(reverse("band", args=[band.pk])), day1[-2:] + ".")
+        first_page = self.client.get(reverse("band", args=[band.pk]))
+        self.assertContains(first_page, date.fromisoformat(day1).strftime("%d.%m.%Y"))
+        self.client.post(reverse("record", args=[band.pk]), {"day": day1, "songs": [first.pk]})
+        next_page = self.client.get(reverse("band", args=[band.pk]))
+        self.assertContains(next_page, date.fromisoformat(day2).strftime("%d.%m.%Y"))
+        self.assertNotContains(next_page, date.fromisoformat(day1).strftime("%d.%m.%Y"))
         self.client.post(reverse("archive_song", args=[band.pk, first.pk]))
         self.assertTrue(Song.objects.get(pk=first.pk).archived)
         self.client.post(reverse("restore_song", args=[band.pk, first.pk]))
