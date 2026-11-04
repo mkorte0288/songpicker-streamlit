@@ -1,0 +1,26 @@
+services:
+  - type: web
+    name: songpicker-accounts
+    runtime: python
+    region: frankfurt
+    plan: free
+    buildCommand: pip install -r requirements-app.txt && python manage.py collectstatic --noinput
+    startCommand: python manage.py migrate --noinput && exec gunicorn bandapp.wsgi:application --bind 0.0.0.0:$PORT --workers 2 --timeout 45
+    healthCheckPath: /healthz/
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.12
+      - key: DJANGO_SECRET_KEY
+        generateValue: true
+      - key: DJANGO_ALLOWED_HOSTS
+        sync: false
+      - key: SONGPICKER_PUBLIC_URL
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: TRUST_HTTPS_PROXY
+        value: "1"
+      - key: BREVO_API_KEY
+        sync: false
+      - key: SMTP_FROM
+        sync: false

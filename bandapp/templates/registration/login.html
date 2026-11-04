@@ -1,0 +1,16 @@
+{% extends 'base.html' %}
+{% block content %}
+<section class="panel narrow"><h1>Anmelden</h1>
+<form method="post">{% csrf_token %}
+{{ form.non_field_errors }}
+<label>E-Mail <input name="username" type="email" maxlength="150" autocomplete="username" required value="{{ form.username.value|default_if_none:'' }}"></label>
+{{ form.username.errors }}
+<label>Passwort {{ form.password }}</label>
+{{ form.password.errors }}
+{% if next %}<input type="hidden" name="next" value="{{ next }}">{% endif %}
+<button>Anmelden</button></form>
+<p><a href="{% url 'password_reset' %}">Passwort vergessen?</a></p>
+{% if public_signup %}<p><a href="{% url 'signup' %}{% if next %}?next={{ next|urlencode }}{% endif %}">Konto anlegen</a></p>{% endif %}
+<p><a href="{% url 'resend' %}">Bestätigungslink erneut senden</a></p>
+</section>
+{% endblock %}
